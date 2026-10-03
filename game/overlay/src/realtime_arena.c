@@ -188,6 +188,7 @@ static bool8 TossActive(void);
 extern u32 gArenaWarpTossTelemetry[8];
 static bool8 ElementReact(struct ArenaShot *shot);
 static void GuardReset(void);
+static void GuardRebind(void);
 static void GuardTick(void);
 static void GuardDraw(void);
 static bool8 ClashBusy(void);
@@ -488,7 +489,7 @@ static bool8 SupportedBattler(u8 side)
         return FALSE;
     gArenaCompatibilityReason=ARENA_COMPAT_STATUS|(side<<8);
     if (
-           (gBattleMons[side].status1 & ~(STATUS1_BURN|STATUS1_POISON|STATUS1_PARALYSIS))
+           (gBattleMons[side].status1 & ~(STATUS1_ANY|STATUS1_TOXIC_COUNTER))
         || (gBattleMons[side].status2 & ~(STATUS2_FOCUS_ENERGY|STATUS2_DEFENSE_CURL))
         || gStatuses3[side] || gBattleMons[side].hp == 0)
         return FALSE;
@@ -517,7 +518,7 @@ static bool8 SupportedBattler(u8 side)
     case ABILITY_INNER_FOCUS:
     case ABILITY_INTIMIDATE:
     case ABILITY_CHLOROPHYLL: // No weather is admitted by Eligible().
-    case ABILITY_INSOMNIA:   // No sleep/status actions are admitted.
+    case ABILITY_INSOMNIA:   // Native SetMoveEffect rejects sleep.
     case ABILITY_GUTS:       // Native damage handles its burn interaction.
     case ABILITY_LIGHTNING_ROD: // Gen III redirection only, doubles excluded.
     case ABILITY_COLOR_CHANGE:
@@ -531,7 +532,7 @@ static bool8 SupportedBattler(u8 side)
     case ABILITY_PLUS: // Partner-only effects; doubles remain classic.
     case ABILITY_MINUS:
     case ABILITY_THICK_FAT: // Native CalculateBaseDamage handles Fire/Ice.
-    case ABILITY_EARLY_BIRD: // Sleep actions/statuses remain classic.
+    case ABILITY_EARLY_BIRD: // Two sleep units per active residual interval.
     case ABILITY_ILLUMINATE: // Encounter-rate ability; no in-battle effect.
     case ABILITY_HYPER_CUTTER: // ChangeStatBuffs keeps its Attack protection.
     case ABILITY_PRESSURE: // Fire charges an extra PP for opposing targeted actions.
@@ -540,11 +541,15 @@ static bool8 SupportedBattler(u8 side)
     case ABILITY_CLOUD_NINE:
     case ABILITY_CLEAR_BODY: // Native ChangeStatBuffs retains rejection.
     case ABILITY_WHITE_SMOKE:
-    case ABILITY_LIMBER: // Paralysis moves still unsupported.
+    case ABILITY_LIMBER: // Native SetMoveEffect rejects paralysis.
     case ABILITY_OBLIVIOUS: // Infatuation moves still unsupported.
     case ABILITY_OWN_TEMPO: // Confusion moves still unsupported.
-    case ABILITY_VITAL_SPIRIT: // Sleep moves still unsupported.
-    case ABILITY_MAGMA_ARMOR: // Freeze moves still unsupported.
+    case ABILITY_VITAL_SPIRIT: // Native SetMoveEffect rejects sleep.
+    case ABILITY_MAGMA_ARMOR: // Native SetMoveEffect rejects freezing.
+    case ABILITY_MARVEL_SCALE: // Native CalculateBaseDamage applies Defense.
+    case ABILITY_STICKY_HOLD: // Item-removal moves are not arena profiles.
+    case ABILITY_SUCTION_CUPS: // Forced-switch moves are not arena profiles.
+    case ABILITY_NATURAL_CURE: // Native switch transaction cures the outgoing mon.
     case ABILITY_FLASH_FIRE:
     case ABILITY_WATER_ABSORB:
     case ABILITY_SHED_SKIN: // Timed native-rate cure below, including saved burns.
@@ -553,8 +558,8 @@ static bool8 SupportedBattler(u8 side)
     case ABILITY_STATIC:
     case ABILITY_POISON_POINT:
     case ABILITY_FLAME_BODY:
-        return TRUE;
     case ABILITY_EFFECT_SPORE:
+        return TRUE;
     case ABILITY_CUTE_CHARM:
         // Do not silently suppress a contact ability. These can enter only if
         // the opposing arena moves cannot trigger it; otherwise the complete
@@ -582,6 +587,9 @@ void RealtimeArena_ResetBattle(void)
     gRealtimeArenaQuietIntro = FALSE;
     ElementsResetBattle();
     StormReset();
+    CoverReset();
+    GuardReset();
+    DecoyReset();
     sEnvironmentInitialized=FALSE;
     memset(&sArena, 0, sizeof(sArena));
     gRealtimeArenaTelemetry.active = FALSE;
@@ -945,10 +953,10 @@ static void CB2_ArenaInit(void)
     FreeAllWindowBuffers();
     ResetTasks();
     ResetSpriteData();
-    DecoyReset();
-    CoverReset();
+    DecoyRebind();
+    CoverRebind();
     BarrierReset();
-    GuardReset();
+    GuardRebind();
     ClashReset();
     SpecialReset();
     ArenaRender_Reset();
@@ -1290,7 +1298,8 @@ static void BeginShot(u8 side, s32 targetX, s32 targetY)
     struct ArenaBody *body = &sArena.bodies[side];
     const struct ArenaMoveProfile *profile = ArenaMoves_Get(gBattleMons[side].moves[body->moveSlot]);
     s32 dx,dy,len;
-    if (!profile || body->shotTimer || PsychicBusy(side) || SpecialBusy(side) || !gBattleMons[side].pp[body->moveSlot]) return;
+    if (!profile || body->shotTimer || PsychicBusy(side) || SpecialBusy(side) || !gBattleMons[side].pp[body->moveSlot]
+        || (gBattleMons[side].status1&(STATUS1_SLEEP|STATUS1_FREEZE))) return;
     if((gBattleMons[side].status1&STATUS1_PARALYSIS) && Random()%4==0)
     {
         body->cooldown=30;
@@ -1320,6 +1329,8 @@ static void TickPendingShots(void)
     {
         struct ArenaBody *body = &sArena.bodies[side];
         const struct ArenaMoveProfile *profile;
+        if(gBattleMons[side].status1&(STATUS1_SLEEP|STATUS1_FREEZE))
+        {body->shotTimer=body->actionLife=body->dash=0;continue;}
         if (!body->shotTimer) continue;
         profile = ArenaMoves_Get(gBattleMons[side].moves[body->shotSlot]);
         // Presentation maps the profile's release to the source HitFrame.
@@ -1364,6 +1375,8 @@ static void TickPlayer(void)
     s32 dx = (JOY_HELD(DPAD_RIGHT) != 0) - (JOY_HELD(DPAD_LEFT) != 0);
     s32 dy = (JOY_HELD(DPAD_DOWN) != 0) - (JOY_HELD(DPAD_UP) != 0);
     if(SpecialBusy(0)||GuardBusy())return;
+    if(gBattleMons[0].status1&(STATUS1_SLEEP|STATUS1_FREEZE))
+    {body->moving=FALSE;sArena.attackBuffer=sArena.dashBuffer=0;return;}
     if (body->dashCooldown) body->dashCooldown--;
     if (sArena.dashBuffer && !body->dashCooldown && !body->actionLife)
     {
@@ -1601,6 +1614,7 @@ static void TickEnemy(void)
     s32 dx, dy, len;
     body->moving = FALSE;
     if(SpecialBusy(1)||GuardBusy())return;
+    if(gBattleMons[1].status1&(STATUS1_SLEEP|STATUS1_FREEZE))return;
     if (body->cooldown && !body->shotTimer && !body->actionLife) body->cooldown--;
     if (sArena.goalTimer) sArena.goalTimer--;
     if (body->shotTimer) return;
@@ -1749,6 +1763,18 @@ static void ApplyResolvedHit(u8 side,u16 move,s32 damage)
                 ability==ABILITY_FLAME_BODY?MOVE_EFFECT_BURN:0;
             if(effect && Random()%3==0)
                 RealtimeArena_InflictStatus(targetSide,side,effect,TRUE);
+            if(ability==ABILITY_EFFECT_SPORE && Random()%10==0)
+            {
+                do {effect=Random()&3;}while(!effect);
+                if(effect==MOVE_EFFECT_BURN)effect=MOVE_EFFECT_PARALYSIS;
+                RealtimeArena_InflictStatus(targetSide,side,effect,TRUE);
+            }
+        }
+        if((gBattleMons[targetSide].status1&STATUS1_FREEZE)&&gBattleMoves[move].type==TYPE_FIRE)
+        {
+            gBattleMons[targetSide].status1&=~STATUS1_FREEZE;
+            SetMonData(targetSide?&gEnemyParty[gBattlerPartyIndexes[targetSide]]:&gPlayerParty[gBattlerPartyIndexes[targetSide]],
+                       MON_DATA_STATUS,&gBattleMons[targetSide].status1);
         }
         target->knockX=sArena.bodies[side].attackX*(move==MOVE_QUICK_ATTACK?4:2);
         target->knockY=sArena.bodies[side].attackY*(move==MOVE_QUICK_ATTACK?4:2);
@@ -2123,7 +2149,7 @@ static void TickBurn(void)
     for(side=0;side<2&&!sArena.resultTimer;side++)
     {
         struct ArenaBody *body=&sArena.bodies[side];
-        if((gBattleMons[side].status1&(STATUS1_BURN|STATUS1_POISON|STATUS1_PARALYSIS)) && gBattleMons[side].hp)
+        if((gBattleMons[side].status1&STATUS1_ANY) && gBattleMons[side].hp)
         {
             if(++body->burnClock==300)
             {
@@ -2138,9 +2164,32 @@ static void TickBurn(void)
                     sArena.hudDirty=TRUE;
                     continue;
                 }
-                if(!(gBattleMons[side].status1&(STATUS1_BURN|STATUS1_POISON)))
+                if(gBattleMons[side].status1&(STATUS1_SLEEP|STATUS1_FREEZE))
+                {
+                    u32 status=gBattleMons[side].status1;
+                    u8 sleep=status&STATUS1_SLEEP;
+                    if(sleep)
+                    {
+                        u8 step=gBattleMons[side].ability==ABILITY_EARLY_BIRD?2:1;
+                        status=(status&~STATUS1_SLEEP)|(sleep>step?sleep-step:0);
+                    }
+                    else if(Random()%5==0)status&=~STATUS1_FREEZE;
+                    gBattleMons[side].status1=status;
+                    SetMonData(side?&gEnemyParty[gBattlerPartyIndexes[side]]:&gPlayerParty[gBattlerPartyIndexes[side]],MON_DATA_STATUS,&status);
+                    body->burnClock=0;sArena.hudDirty=TRUE;continue;
+                }
+                if(!(gBattleMons[side].status1&(STATUS1_BURN|STATUS1_PSN_ANY)))
                 {body->burnClock=0;continue;}
                 damage=min(gBattleMons[side].hp,max(1,gBattleMons[side].maxHP/8));
+                if(gBattleMons[side].status1&STATUS1_TOXIC_POISON)
+                {
+                    u32 status=gBattleMons[side].status1;
+                    u8 turns=min(15,((status&STATUS1_TOXIC_COUNTER)>>8)+1);
+                    status=(status&~STATUS1_TOXIC_COUNTER)|STATUS1_TOXIC_TURN(turns);
+                    gBattleMons[side].status1=status;
+                    SetMonData(side?&gEnemyParty[gBattlerPartyIndexes[side]]:&gPlayerParty[gBattlerPartyIndexes[side]],MON_DATA_STATUS,&status);
+                    damage=min(gBattleMons[side].hp,max(1,gBattleMons[side].maxHP/16)*turns);
+                }
                 body->burnClock=0;gBattleMons[side].hp-=damage;
                 SetMonData(side?&gEnemyParty[gBattlerPartyIndexes[side]]:&gPlayerParty[gBattlerPartyIndexes[side]],
                            MON_DATA_HP,&gBattleMons[side].hp);

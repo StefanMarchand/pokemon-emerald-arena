@@ -18,13 +18,22 @@ const struct ArenaRect gArenaObstacles[ARENA_OBSTACLES] =
 #define NODES (ARENA_CORNERS + 2)
 #define INF 0xFFFF
 static EWRAM_DATA struct ArenaPoint sCorners[ARENA_CORNERS] = {};
-static EWRAM_DATA u16 sEdges[ARENA_CORNERS][ARENA_CORNERS] = {};
-static EWRAM_DATA u8 sBlockers[ARENA_CORNERS][ARENA_CORNERS] = {};
+// Undirected visibility edges: keep one triangle, including the diagonal.
+// 28 corners save 1,134 bytes of scarce EWRAM with identical path geometry.
+#define EDGE_COUNT (ARENA_CORNERS * (ARENA_CORNERS + 1) / 2)
+static EWRAM_DATA u16 sEdges[EDGE_COUNT] = {};
+static EWRAM_DATA u8 sBlockers[EDGE_COUNT] = {};
 static EWRAM_DATA u8 sCornerBlockers[ARENA_CORNERS] = {};
 static EWRAM_DATA u8 sCornerInBounds[ARENA_CORNERS] = {};
 static EWRAM_DATA u8 sSolidMask = 0;
 
 static s32 Abs(s32 n) { return n < 0 ? -n : n; }
+static u16 EdgeIndex(u16 a,u16 b)
+{
+    u16 tmp;
+    if(a<b){tmp=a;a=b;b=tmp;}
+    return a*(a+1)/2+b;
+}
 static u8 IntersectsRect(s16 x1,s16 y1,s16 x2,s16 y2,u8 index,u8 radius)
 {
     const struct ArenaRect *r=&gArenaObstacles[index];
@@ -114,8 +123,9 @@ void ArenaNav_Init(void)
     for (i = 0; i < ARENA_CORNERS; i++)
         for (j = i; j < ARENA_CORNERS; j++)
         {
-            sEdges[j][i]=sEdges[i][j]=ArenaNav_Distance(sCorners[i].x,sCorners[i].y,sCorners[j].x,sCorners[j].y);
-            sBlockers[j][i]=sBlockers[i][j]=Blockers(sCorners[i].x,sCorners[i].y,sCorners[j].x,sCorners[j].y,ARENA_BODY_RADIUS);
+            u16 index=EdgeIndex(i,j);
+            sEdges[index]=ArenaNav_Distance(sCorners[i].x,sCorners[i].y,sCorners[j].x,sCorners[j].y);
+            sBlockers[index]=Blockers(sCorners[i].x,sCorners[i].y,sCorners[j].x,sCorners[j].y,ARENA_BODY_RADIUS);
         }
 }
 
@@ -159,7 +169,10 @@ u8 ArenaNav_NextWaypoint(s16 x, s16 y, s16 goalX, s16 goalY, struct ArenaPoint *
         {
             if (visited[j]) continue;
             if (node < ARENA_CORNERS && j < ARENA_CORNERS)
-                edge = (sBlockers[node][j]&sSolidMask)?INF:sEdges[node][j];
+            {
+                u16 index=EdgeIndex(node,j);
+                edge = (sBlockers[index]&sSolidMask)?INF:sEdges[index];
+            }
             else edge = ArenaNav_LineClear(points[node].x, points[node].y, points[j].x, points[j].y, ARENA_BODY_RADIUS)
                 ? ArenaNav_Distance(points[node].x, points[node].y, points[j].x, points[j].y) : INF;
             if (edge == INF) continue;

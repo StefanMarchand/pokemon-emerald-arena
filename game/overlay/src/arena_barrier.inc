@@ -18,7 +18,13 @@ static void BarrierReset(void)
     for(side=0;side<2;side++)
     {
         sBarrierSprite[side]=MAX_SPRITES;sBarrierFrame[side]=255;
-        for(kind=0;kind<2;kind++)sBarrierLife[side][kind]=(gSideStatuses[side]&sBarrierFlag[kind])?BARRIER_LIFE:0;
+        for(kind=0;kind<2;kind++)
+        {
+            u16 nativeLife=(kind?gSideTimers[side].lightscreenTimer:gSideTimers[side].reflectTimer)*120;
+            if(!(gSideStatuses[side]&sBarrierFlag[kind]))sBarrierLife[side][kind]=0;
+            else if(!sEnvironmentInitialized||!sBarrierLife[side][kind])sBarrierLife[side][kind]=nativeLife;
+            else sBarrierLife[side][kind]=min(sBarrierLife[side][kind],nativeLife);
+        }
     }
 }
 static void BarrierStart(u8 side,u16 move)

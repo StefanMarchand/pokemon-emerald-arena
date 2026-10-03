@@ -45,27 +45,28 @@ static void DecoyHide(void)
         for(j=0;j<3;j++)if(d->sprites[j]<MAX_SPRITES)gSprites[d->sprites[j]].invisible=TRUE;
         if(d->shadow<MAX_SPRITES)gSprites[d->shadow].invisible=TRUE;
         if(d->fx<MAX_SPRITES)gSprites[d->fx].invisible=TRUE;
-        d->life=d->burst=0;
     }
-    gArenaDecoyTelemetry[5]=0;
 }
 
-static bool8 DecoyStart(u8 side)
+static void DecoyRebind(void)
+{
+    u32 side,j;
+    for(side=0;side<2;side++)
+    {
+        struct ArenaDecoy*d=&sDecoys[side];
+        if(sArenaSendoutMask&(1<<side))
+        {d->life=d->age=d->burst=0;gArenaDecoyTelemetry[5]&=~(1<<side);}
+        for(j=0;j<3;j++)d->sprites[j]=MAX_SPRITES;
+        d->shadow=d->fx=MAX_SPRITES;d->frame=255;
+    }
+}
+
+static bool8 DecoySprites(u8 side)
 {
     struct ArenaDecoy *d=&sDecoys[side];
     struct ArenaBody *body=&sArena.bodies[side];
-    static const s8 offsets[12][2]={{40,-20},{-40,-20},{36,20},{-36,20},{0,-40},{0,40},
-        {28,-28},{-28,-28},{28,28},{-28,28},{24,0},{-24,0}};
-    u32 i,j;
+    u32 j;
     s16 x=body->x/Q,y=body->y/Q;
-    for(i=0;i<ARRAY_COUNT(offsets);i++)
-    {
-        s16 nx=x+offsets[i][0],ny=y+offsets[i][1]*(side?-1:1);
-        if(ArenaNav_CanStand(nx,ny)&&ArenaNav_LineClear(x,y,nx,ny,ARENA_BODY_RADIUS)
-            &&ArenaNav_Distance(nx,ny,sArena.bodies[side^1].x/Q,sArena.bodies[side^1].y/Q)>20)
-        {d->x=nx;d->y=ny;break;}
-    }
-    if(i==ARRAY_COUNT(offsets))return FALSE;
     for(j=0;j<3;j++)
     {
         if(d->sprites[j]==MAX_SPRITES)
@@ -93,6 +94,25 @@ static bool8 DecoyStart(u8 side)
     }
     LoadPalette(sDecoyPalette+1,OBJ_PLTT_ID(IndexOfSpritePaletteTag(SHOT_TAG))+5,16);
     d->frame=255;
+    return TRUE;
+}
+
+static bool8 DecoyStart(u8 side)
+{
+    struct ArenaDecoy*d=&sDecoys[side];
+    struct ArenaBody*body=&sArena.bodies[side];
+    static const s8 offsets[12][2]={{40,-20},{-40,-20},{36,20},{-36,20},{0,-40},{0,40},
+        {28,-28},{-28,-28},{28,28},{-28,28},{24,0},{-24,0}};
+    u32 i;
+    s16 x=body->x/Q,y=body->y/Q;
+    for(i=0;i<ARRAY_COUNT(offsets);i++)
+    {
+        s16 nx=x+offsets[i][0],ny=y+offsets[i][1]*(side?-1:1);
+        if(ArenaNav_CanStand(nx,ny)&&ArenaNav_LineClear(x,y,nx,ny,ARENA_BODY_RADIUS)
+            &&ArenaNav_Distance(nx,ny,sArena.bodies[side^1].x/Q,sArena.bodies[side^1].y/Q)>20)
+        {d->x=nx;d->y=ny;break;}
+    }
+    if(i==ARRAY_COUNT(offsets)||!DecoySprites(side))return FALSE;
     d->startX=x;d->startY=y;d->age=0;d->life=360;d->burst=0;
     gArenaDecoyTelemetry[0]++;gArenaDecoyTelemetry[5]|=1<<side;
     PlaySE(SE_M_DOUBLE_TEAM);
@@ -145,6 +165,7 @@ static void DecoyDraw(void)
     {
         struct ArenaDecoy*d=&sDecoys[side];
         struct Sprite*owner=&gSprites[sArena.bodies[side].sprite];
+        if((d->life||d->burst)&&d->sprites[0]==MAX_SPRITES)DecoySprites(side);
         for(j=0;j<3;j++)
         {
             struct Sprite*s;

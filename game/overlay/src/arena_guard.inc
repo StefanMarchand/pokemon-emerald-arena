@@ -21,6 +21,13 @@ static void GuardStart(u8 side)
     sGuardLife[side]=60;sGuardAge[side]=0;
     gArenaGuardTelemetry[0]++;PlaySE(SE_M_REFLECT);
 }
+static void GuardRebind(void)
+{
+    u32 i;
+    for(i=0;i<2;i++)if(sArenaSendoutMask&(1<<i))sGuardLife[i]=sGuardAge[i]=0;
+    // Menus are disallowed during absorption; no stale cosmetic continuation.
+    memset(&sGuardAbsorb,0,sizeof(sGuardAbsorb));
+}
 static bool8 GuardIntercept(u8 side,u16 move)
 {
     u8 defender=side^1;

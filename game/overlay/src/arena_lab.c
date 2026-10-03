@@ -52,6 +52,25 @@ void ArenaLab_Tick(void)
     gArenaLabMailbox.result = 0;
     switch (command)
     {
+    case 40:
+        // Original Wally story checkpoint, same state/warp as Norman's script.
+        // The native story must borrow and then restore the player's party.
+        FlagSet(FLAG_HIDE_PETALBURG_CITY_WALLYS_MOM);
+        FlagClear(FLAG_HIDE_PETALBURG_CITY_WALLY);
+        FlagClear(FLAG_HIDE_PETALBURG_GYM_WALLY);
+        VarSet(VAR_PETALBURG_GYM_STATE,1);
+        VarSet(VAR_PETALBURG_CITY_STATE,2);
+        SetWarpDestination(MAP_GROUP(MAP_PETALBURG_CITY),MAP_NUM(MAP_PETALBURG_CITY),-1,15,8);
+        DoWarp();break;
+    case 38:
+    case 39:
+    {
+        // An intentionally unsupported battle-effect item tests mixed-mode
+        // transitions now that sleep itself is supported by the arena.
+        u16 item=ITEM_LIGHT_BALL;
+        SetMonData(&gPlayerParty[command==39?1:0],MON_DATA_HELD_ITEM,&item);
+        break;
+    }
     case 37:
         // Disposable Route 102 regression: approach the original Lass event.
         // No trainer party, release map, HP or battle result is modified.
@@ -63,14 +82,15 @@ void ArenaLab_Tick(void)
     {
         // Explicit status fixture only, validated and applied in the field.
         u32 status=gArenaLabMailbox.species;
-        if(status!=STATUS1_POISON && status!=STATUS1_PARALYSIS)
+        if(status!=STATUS1_POISON && status!=STATUS1_PARALYSIS && status!=2
+           &&status!=STATUS1_FREEZE &&status!=STATUS1_TOXIC_POISON)
         {gArenaLabMailbox.result=2;break;}
         SetMonData(&gPlayerParty[0],MON_DATA_STATUS,&status);
         break;
     }
     case 35:
     {
-        // Sleeping lead exercises the deliberate native fallback and switch.
+        // Saved sleep fixture (arena-native status regression).
         u32 status=2;
         SetMonData(&gPlayerParty[0],MON_DATA_STATUS,&status);
         break;

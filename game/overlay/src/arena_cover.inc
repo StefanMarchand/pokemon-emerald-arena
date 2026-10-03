@@ -26,6 +26,19 @@ static void CoverReset(void)
     sSmokeFrame=255;
     memset(gArenaCoverTelemetry,0,sizeof(gArenaCoverTelemetry));
 }
+// Native menus destroy OBJ resources, not the encounter's gameplay state.
+// Reuse the existing storage: no extra EWRAM snapshot or HP refund.
+static void CoverRebind(void)
+{
+    u32 i,j;
+    for(i=0;i<2;i++)
+    {
+        if(sArenaSendoutMask&(1<<i))memset(&sCover[i],0,sizeof(sCover[i]));
+        sCover[i].sprite=MAX_SPRITES;sCover[i].frame=255;
+        for(j=0;j<3;j++)sSmoke[i].sprites[j]=MAX_SPRITES;
+    }
+    sSmokeFrame=255;
+}
 static u8 CoverSprite(u16 tag,const u32 *tiles,s16 x,s16 y,const struct OamData *oam,u16 size)
 {
     struct SpriteSheet sheet={tiles,size,tag};
@@ -141,6 +154,10 @@ static void CoverDraw(void)
     for(i=0;i<2;i++)
     {
         struct ArenaCover*c=&sCover[i];struct ArenaSmoke*m=&sSmoke[i];
+        if((c->hp||c->burst)&&c->sprite==MAX_SPRITES)
+            c->sprite=CoverSprite(COVER_TAG+i,sDollArt[gArenaBiome],c->x/Q,c->y/Q-12,&sDollOam,512);
+        if(m->life)for(j=0;j<3;j++)if(m->sprites[j]==MAX_SPRITES)
+            m->sprites[j]=CoverSprite(COVER_TAG+2,sCoverFrames+16*512,0,0,&sCoverOam,2048);
         if(c->sprite<MAX_SPRITES)
         {
             struct Sprite*s=&gSprites[c->sprite];u8 f;
