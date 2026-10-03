@@ -1238,10 +1238,26 @@
     }
   },
   {
+    "dex": "0092",
+    "species": "GASTLY",
+    "level": 24,
+    "poses": {"Attack": "Shoot"}
+  },
+  {
     "dex": "0382",
     "species": "KYOGRE",
     "level": 70,
     "frame_fit": [3, 4],
     "poses": {"Attack": "Shoot", "SpAttack": "Shoot"}
-  }
+  },
+  {"dex":"0339","species":"BARBOACH","level":20,"poses":{"Attack":"Shoot"}},
+  {"dex":"0363","species":"SPHEAL","level":25,"poses":{"Attack":"Shoot"}},
+  {"dex":"0338","species":"SOLROCK","level":25,"poses":{"Attack":"Shoot"}},
+  {"dex":"0027","species":"SANDSHREW","level":20,"poses":{"Attack":"Shoot"}},
+  {"dex":"0328","species":"TRAPINCH","level":20,"poses":{"Attack":"Shoot"}},
+  {"dex":"0324","species":"TORKOAL","level":25,"poses":{"Shoot":"Charge","Attack":"Attack","SpAttack":"Charge"}},
+  {"dex":"0322","species":"NUMEL","level":20,"poses":{"Attack":"Shoot"}},
+  {"dex":"0355","species":"DUSKULL","level":25,"poses":{"Attack":"Shoot"}},
+  {"dex":"0318","species":"CARVANHA","level":20,"poses":{"Attack":"Shoot"}},
+  {"dex":"0081","species":"MAGNEMITE","level":20,"poses":{"Attack":"Shoot"}}
 ]

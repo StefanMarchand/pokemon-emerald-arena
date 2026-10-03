@@ -150,10 +150,12 @@ static void StormTick(void)
             &&sStorm.waveAge>=18+sStorm.distance[cell]*2
             &&sStorm.waveAge<34+sStorm.distance[cell]*2
             &&ElementGrounded(target)&&!SpecialInvulnerable(target)&&!sArena.bodies[target].dash) {
-            s32 damage=RealtimeArena_ResolveDamage(sStorm.side,target,sStorm.move);
+            s32 damage=0;
+            bool8 blocked=GuardIntercept(sStorm.side,sStorm.move);
+            if(!blocked)damage=RealtimeArena_ResolveDamage(sStorm.side,target,sStorm.move);
             gArenaStormTelemetry[8]++;
             if(damage>0)damage=max(1,damage/2);
-            ApplyResolvedHit(sStorm.side,sStorm.move,damage);
+            if(!blocked)ApplyResolvedHit(sStorm.side,sStorm.move,damage);
             gArenaStormTelemetry[4]++;sStorm.hit=TRUE;
             PlaySE(SE_M_THUNDERBOLT);
         }

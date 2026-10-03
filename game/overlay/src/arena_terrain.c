@@ -10,6 +10,7 @@
 #include "constants/songs.h"
 #include "constants/rgb.h"
 #define TAG 0xA790
+extern u8 gArenaStage;
 static const u32 sProps[]=INCBIN_U32(".arena-dev/art/props.4bpp");
 static const u32 sPieces[]=INCBIN_U32(".arena-dev/art/pieces.4bpp");
 static const u32 sCoastPieces[]=INCBIN_U32(".arena-dev/art/coast-pieces.4bpp");
@@ -138,7 +139,7 @@ void ArenaTerrain_Draw(bool8 paused,bool8 frozen)
             s->y=r->state?r->y/256-r->height:(rect->top+rect->bottom)/2;
             s->oam.priority=r->state?0:1;
             s->x2=paused||!p->flash?0:(p->flash&1)?1:-1;
-            s->invisible=p->fuse&&(p->fuse&2)&&!paused;
+            s->invisible=gArenaStage==16||(p->fuse&&(p->fuse&2)&&!paused);
         }
     }
     for(i=0;i<ARENA_FRAGMENTS;i++)

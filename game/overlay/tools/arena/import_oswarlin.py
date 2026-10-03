@@ -6,6 +6,8 @@ ROOT=Path(__file__).resolve().parents[2]
 OUT=ROOT/'graphics/arena/oswarlin'
 ART=ROOT/'.arena-dev/art/oswarlin'
 NAMES=[('forest','Biome-Forest-V1.jpg',0),('water',None,1),('cave',None,2),('desert','biome-desert-V2.jpg',3),('common','Comun-Battle Arena-V1.jpeg',4),('tallgrass','Biome-Tall grass-V1.jpg',0),('beach','Biome-coast-v2.jpg',3),('base','base arena.jpeg',4),('roxanne','Petra Gym Arena-V1.jpeg',4),('brawly','Marcial Gym Arena-V1.png',4),('wattson','Watsson Gym Arena-V1.png',4),('flannery','Candela Gym Arena-V1.jpeg',4),('norman','Norman Gym Arena-V1.jpeg',4),('winona','Alana Gym Arena-V1.jpeg',4),('tate_liza','Bito & Leti Gym Arena-V1.jpeg',4),('juan','Gemini_Generated_Image_w6uydhw6uydhw6uy.jpeg',4)]
+# Original procedural volcanic stage is separate from Oswarlin's credited art.
+NAMES.append(('volcano','__procedural_volcano__',2))
 def adapt(im,name):
     im=im.convert('RGB');w,h=im.size
     if name in [n for n,_,_ in NAMES[8:]]:
@@ -33,6 +35,7 @@ def main():
         badges.save(OUT/'badges-source.png')
         badge_boxes=[(18,18,165,150),(195,15,335,140),(338,8,478,145),(370,165,530,325),(175,155,330,315),(25,330,170,485),(195,355,355,505),(385,340,550,505)]
         for name,filename,biome in NAMES:
+            if name=='volcano':continue
             if filename is None:continue
             source=a.source/filename
             adapted=adapt(Image.open(source),name)
@@ -69,7 +72,7 @@ def main():
         packed.with_suffix('.8bpp').write_bytes(bytes(c+16 for c in quant.tobytes()))
         packed.with_suffix('.gbapal').write_bytes(struct.pack('<256H',*pal))
         lines += [f'static const u32 sStage{index}Tiles[]=INCBIN_U32("{path}.8bpp");',f'static const u16 sStage{index}Pal[]=INCBIN_U16("{path}.gbapal");']
-    lines += ['const u32 *const gArenaStageTiles[]={'+','.join(f'sStage{i}Tiles' for i in range(16))+'};','const u16 *const gArenaStagePalettes[]={'+','.join(f'sStage{i}Pal' for i in range(16))+'};']
+    lines += ['const u32 *const gArenaStageTiles[]={'+','.join(f'sStage{i}Tiles' for i in range(len(NAMES)))+'};','const u16 *const gArenaStagePalettes[]={'+','.join(f'sStage{i}Pal' for i in range(len(NAMES)))+'};']
     (OUT/'stages.inc').write_text('\n'.join(lines)+'\n')
     flood=bytearray()
     for name,filename,biome in NAMES:

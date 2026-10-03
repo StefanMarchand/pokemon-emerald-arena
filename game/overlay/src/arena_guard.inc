@@ -72,7 +72,7 @@ static void GuardDraw(void)
             u8 reach=min(120,max(8,max(dx,dy)+min(dx,dy)/2-17));
             // Fade in place, never travel back toward the attacker.
             ArenaMoveFx_Flame(side^1,MOVE_HYPER_BEAM,source->x/Q,source->y/Q-8,
-                (sGuardAbsorb.dir+4)%8,age<18?12+age:66+(age-18)/2,reach,TRUE);
+                (sGuardAbsorb.dir+4)%8,age<18?12+age:66+(age-18)/2,reach,TRUE,FALSE);
         }
         ArenaMoveFx_Guard(side,sGuardAbsorb.x,sGuardAbsorb.y-8,
             8+min(15,age/4),sGuardAbsorb.dir);

@@ -26,6 +26,10 @@ static EWRAM_DATA u8 sActorFx[2] = {};
 static EWRAM_DATA u16 sDrawn[2] = {};
 static EWRAM_DATA u16 sBoltFrames[ARENA_BOLT_SLOTS] = {};
 static const u32 sFlameTiles[]=INCBIN_U32("graphics/arena/flame/plume.4bpp");
+static const u32 sClashTiles[]=INCBIN_U32("graphics/arena/flame-clash/effect.4bpp");
+static const u16 sClashPalette[]=INCBIN_U16("graphics/arena/flame-clash/palette.gbapal");
+static EWRAM_DATA u8 sClashSprite=MAX_SPRITES,sClashFrame=255;
+EWRAM_DATA u32 gArenaClashFxFailures=0;
 static const u32 sGuardTiles[]=INCBIN_U32("graphics/arena/guard/effect.4bpp");
 static const u16 sGuardPalette[]=INCBIN_U16("graphics/arena/guard/palette.gbapal");
 static const u32 sSignatureForest[]=INCBIN_U32("graphics/arena/signatures150/forest.4bpp");
@@ -81,6 +85,23 @@ void ArenaMoveFx_Init(void)
     // Reuse the two existing action tile banks and spare fire-palette entries.
     // One bounded double-size affine object per side. No extra VRAM or heap.
     gArenaFlameFxFailures=0;
+    sClashSprite=MAX_SPRITES;sClashFrame=255;gArenaClashFxFailures=0;
+    {
+        u32 side,slot;u8 flames=0;
+        for(side=0;side<2;side++)for(slot=0;slot<MAX_MON_MOVES;slot++)
+            if(gBattleMons[side].moves[slot]==MOVE_FLAMETHROWER){flames++;break;}
+        if(flames==2)
+        {
+            struct SpriteSheet sheet={sClashTiles,2048,0xA890};
+            struct SpritePalette pal={sClashPalette,0xA890};
+            struct SpriteTemplate t=sActionTemplate;
+            t.tileTag=t.paletteTag=0xA890;t.oam=&sFlameOam;
+            if(LoadSpriteSheet(&sheet)!=0xFFFF&&LoadSpritePalette(&pal)!=0xFF)
+                sClashSprite=CreateSprite(&t,120,80,0);
+            if(sClashSprite<MAX_SPRITES)gSprites[sClashSprite].invisible=TRUE;
+            else gArenaClashFxFailures++;
+        }
+    }
     {
         struct SpritePalette pal={sGuardPalette,0xA870};
         u32 side,slot;
@@ -110,7 +131,16 @@ void ArenaMoveFx_Init(void)
     }
 }
 
-void ArenaMoveFx_Flame(u8 side,u16 move,s16 x,s16 y,u8 dir,u8 age,u8 reach,bool8 active)
+bool8 ArenaMoveFx_ClashReady(void){return sClashSprite<MAX_SPRITES;}
+void ArenaMoveFx_Clash(s16 x,s16 y,u8 dir,u8 frame,bool8 active)
+{
+    struct Sprite *s;if(sClashSprite==MAX_SPRITES)return;
+    s=&gSprites[sClashSprite];s->invisible=!active;s->x=x;s->y=y;
+    SetOamMatrix(s->oam.matrixNum,sDirections[dir][0],sDirections[dir][1],-sDirections[dir][1],sDirections[dir][0]);
+    if(active&&sClashFrame!=frame)
+    {ArenaRender_Copy(sClashTiles+frame*512,(u8*)OBJ_VRAM0+GetSpriteTileStartByTag(0xA890)*32,2048);sClashFrame=frame;}
+}
+void ArenaMoveFx_Flame(u8 side,u16 move,s16 x,s16 y,u8 dir,u8 age,u8 reach,bool8 active,bool8 clashing)
 {
     u8 frame=(age/4)&7;
     u8 kind=ArenaMoves_Beam(move);
@@ -133,6 +163,7 @@ void ArenaMoveFx_Flame(u8 side,u16 move,s16 x,s16 y,u8 dir,u8 age,u8 reach,bool8
         struct Sprite *s=&gSprites[sFlameSprites[side]];
         s32 inverseX=56*256/max(8,reach),inverseY=kind==9?112:180*120/max(30,reach);
         s16 dx=sDirections[dir][0],dy=sDirections[dir][1],d=reach/2+5;
+        if(clashing&&kind==1)inverseY=256-min(60,age); // Pressure widens, not lengthens, the jets.
         s->invisible=!active||!reach;
         if(s->invisible)return;
         s->oam.paletteNum=kind==9?IndexOfSpritePaletteTag(0xA870):kind==1?ArenaFeedback_FirePalette():SignaturePalette(group);

@@ -2,6 +2,7 @@
 #include "arena_lab.h"
 #if ARENA_LAB
 #include "battle_setup.h"
+#include "battle.h"
 #include "event_data.h"
 #include "fieldmap.h"
 #include "field_screen_effect.h"
@@ -25,6 +26,9 @@
 #include "constants/battle_setup.h"
 #include "field_player_avatar.h"
 #include "constants/opponents.h"
+#include "event_object_movement.h"
+#include "constants/event_objects.h"
+#include "constants/trainer_types.h"
 
 // Only included in the separate arena_lab.gba development build.
 // Commands are consumed in the real overworld, never halfway through a menu.
@@ -48,6 +52,74 @@ void ArenaLab_Tick(void)
     gArenaLabMailbox.result = 0;
     switch (command)
     {
+    case 37:
+        // Disposable Route 102 regression: approach the original Lass event.
+        // No trainer party, release map, HP or battle result is modified.
+        FlagClear(TRAINER_FLAGS_START + TRAINER_TIANA);
+        gSaveBlock2Ptr->optionsTextSpeed=OPTIONS_TEXT_SPEED_FAST;
+        SetWarpDestination(MAP_GROUP(MAP_ROUTE102),MAP_NUM(MAP_ROUTE102),-1,8,11);
+        DoWarp();break;
+    case 36:
+    {
+        // Explicit status fixture only, validated and applied in the field.
+        u32 status=gArenaLabMailbox.species;
+        if(status!=STATUS1_POISON && status!=STATUS1_PARALYSIS)
+        {gArenaLabMailbox.result=2;break;}
+        SetMonData(&gPlayerParty[0],MON_DATA_STATUS,&status);
+        break;
+    }
+    case 35:
+    {
+        // Sleeping lead exercises the deliberate native fallback and switch.
+        u32 status=2;
+        SetMonData(&gPlayerParty[0],MON_DATA_STATUS,&status);
+        break;
+    }
+    case 33:
+    {
+        // Disposable held-item fixture. No release code or save mutation.
+        u16 item=ITEM_POTION;
+        SetMonData(&gPlayerParty[0],MON_DATA_HELD_ITEM,&item);
+        break;
+    }
+    case 34:
+    {
+        // Disposable pre-existing burn for Shed Skin residual/persistence QA.
+        u32 status=STATUS1_BURN;
+        SetMonData(&gPlayerParty[0],MON_DATA_STATUS,&status);
+        break;
+    }
+    case 32:
+    {
+        // Private capture staging: Marcel's real script/party in the cave.
+        // No release map, trainer party or combat values are changed.
+        extern const u8 Route121_EventScript_Marcel[];
+        struct ObjectEventTemplate *t=&gSaveBlock1Ptr->objectEventTemplates[0];
+        if(gSaveBlock1Ptr->location.mapGroup!=MAP_GROUP(MAP_GRANITE_CAVE_1F)
+        ||gSaveBlock1Ptr->location.mapNum!=MAP_NUM(MAP_GRANITE_CAVE_1F))
+        {gArenaLabMailbox.result=2;break;}
+        RemoveObjectEventByLocalIdAndMap(t->localId,gSaveBlock1Ptr->location.mapNum,gSaveBlock1Ptr->location.mapGroup);
+        t->graphicsId=OBJ_EVENT_GFX_BOY_1; // Same artwork as arena OpponentGraphics.
+        t->movementType=MOVEMENT_TYPE_FACE_DOWN;
+        t->trainerType=TRAINER_TYPE_NORMAL;
+        t->trainerRange_berryTreeId=1;
+        t->script=Route121_EventScript_Marcel;
+        ClearTrainerFlag(TRAINER_MARCEL);
+        SpawnSpecialObjectEvent(t);
+        break;
+    }
+    case 30:
+        // Disposable legal Charizard movepool, only in the laboratory ROM.
+        if(GetMonData(&gPlayerParty[0],MON_DATA_SPECIES)!=SPECIES_CHARIZARD)
+        {gArenaLabMailbox.result=2;break;}
+        SetMonMoveSlot(&gPlayerParty[0],MOVE_FLAMETHROWER,0);
+        SetMonMoveSlot(&gPlayerParty[0],MOVE_SEISMIC_TOSS,1);
+        SetMonMoveSlot(&gPlayerParty[0],MOVE_SLASH,2);
+        SetMonMoveSlot(&gPlayerParty[0],MOVE_PROTECT,3);
+        break;
+    case 31:
+        SetWarpDestination(MAP_GROUP(MAP_MT_CHIMNEY),MAP_NUM(MAP_MT_CHIMNEY),-1,15,18);
+        DoWarp();break;
     case 29:
     {
         // Private legal TM setup; no stats, HP, AI or outcome manipulation.
@@ -98,13 +170,14 @@ void ArenaLab_Tick(void)
         u16 species=GetMonData(mon,MON_DATA_SPECIES);
         u8 level=GetMonData(mon,MON_DATA_LEVEL);
         u32 exp;
-        if(species!=SPECIES_CHARMELEON || level!=35)
+        if(!((species==SPECIES_CHARMELEON && level==35)
+            || (species==SPECIES_GASTLY && level==24)))
         {gArenaLabMailbox.result=2;break;}
-        exp=gExperienceTables[gSpeciesInfo[species].growthRate][36]-400;
+        exp=gExperienceTables[gSpeciesInfo[species].growthRate][level+1]-400;
         SetMonData(mon,MON_DATA_EXP,&exp);
-        SetMonMoveSlot(mon,MOVE_FLAMETHROWER,0);
-        SetMonMoveSlot(mon,MOVE_SMOKESCREEN,1);
-        SetMonMoveSlot(mon,MOVE_EMBER,2);
+        SetMonMoveSlot(mon,species==SPECIES_GASTLY?MOVE_DOUBLE_TEAM:MOVE_FLAMETHROWER,0);
+        SetMonMoveSlot(mon,species==SPECIES_GASTLY?MOVE_PSYCHIC:MOVE_SMOKESCREEN,1);
+        SetMonMoveSlot(mon,species==SPECIES_GASTLY?MOVE_NIGHT_SHADE:MOVE_EMBER,2);
         SetMonMoveSlot(mon,MOVE_NONE,3);
         break;
     }
@@ -139,6 +212,12 @@ void ArenaLab_Tick(void)
             switch(gArenaLabMailbox.species)
             {
             case SPECIES_CHARIZARD: move=MOVE_FLAMETHROWER; break;
+            case SPECIES_MAGMAR:
+            {
+                u16 item=ITEM_NONE;
+                SetMonData(&gEnemyParty[0],MON_DATA_HELD_ITEM,&item);
+                move=MOVE_FLAMETHROWER;break;
+            }
             case SPECIES_DRAGONITE:
             {
                 u16 item=ITEM_NONE; // Ordinary itemless wild specimen, not Dragon Scale.

@@ -72,4 +72,4 @@ node tools/package-release.mjs /path/outside/this/repo/new-release-directory
 
 Packaging uses an explicit five-file allowlist. It refuses to overwrite an
 existing archive and emits `SHA256SUMS.txt`. The original ROM is never an input
-to ZIP packaging. Version 0.11.0 includes arena captures and 150 sprite sets.
+to ZIP packaging. Version 0.12.0 includes arena captures and 162 sprite sets.

@@ -2,7 +2,7 @@
 
 Pokémon Emerald with real time battles. Inside the original GBA game.
 
-[**Download Emerald Arena**](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.11.0/Emerald-Arena-0.11.0.zip) · [Installation guide](PLAY.md)
+[**Download Emerald Arena**](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.12.0/Emerald-Arena-0.12.0.zip) · [Installation guide](PLAY.md)
 
 [**Project website**](https://burgar.dev/emerald) · [How I’m building it with the community](https://burgar.dev/notes/emerald.html)
 
@@ -12,16 +12,17 @@ Pokémon Emerald with real time battles. Inside the original GBA game.
 
 ## Watch gameplay
 
-[![Protect and community playtest improvements](media/emerald-arena-protect-playtest.jpg)](https://github.com/GBurgardt/pokemon-emerald-arena/raw/refs/heads/main/media/emerald-arena-protect-playtest.mp4)
+[![Community stability improvements](media/emerald-arena-stability.jpg)](https://github.com/GBurgardt/pokemon-emerald-arena/raw/refs/heads/main/media/emerald-arena-stability.mp4)
 
-[New improvements · 50 seconds with sound](media/emerald-arena-protect-playtest.mp4) · [Full gameplay · 2:26 with sound](https://github.com/GBurgardt/pokemon-emerald-arena/raw/refs/heads/main/media/emerald-arena-full-gameplay.mp4)
+[New improvements · 47 seconds with sound](media/emerald-arena-stability.mp4) · [Full gameplay · 2:26 with sound](https://github.com/GBurgardt/pokemon-emerald-arena/raw/refs/heads/main/media/emerald-arena-full-gameplay.mp4)
 
 [Playing on an AYN Thor · 16 seconds](https://github.com/GBurgardt/pokemon-emerald-arena/raw/refs/heads/main/media/emerald-arena-ayn-thor.mp4)
 
-New in 0.11.0: Protect and Hyper Beam, bag and party menus during battle,
-clearer HP/levels, caught indicators and XP notifications while walking.
-Also includes in-battle evolution, temporary rain/flooding and Oswarlin's arenas.
-151 animated Pokémon. [Watch the new gameplay](media/emerald-arena-protect-playtest.mp4).
+New in 0.12.0: safer trainer handoffs and switching, poison/paralysis support,
+contact abilities, status-only teams, four more move profiles and ten more story
+sprite sets. Also includes the previously previewed flame clashes and ghost evolution art.
+162 animated Pokémon. Unsupported encounters still use classic battles.
+This is a stability update, not certification of the full story or every emulator.
 
 Dig, Fly, Teleport, Seismic Toss, Double Team and elemental terrain are still included. [Watch the four new moves · 46 seconds](media/emerald-arena-four-moves.mp4).
 Seismic Toss was contributed by [Didier Lopes](https://github.com/DidierRLopes) in [PR #1](https://github.com/GBurgardt/pokemon-emerald-arena/pull/1).

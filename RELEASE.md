@@ -1,3 +1,9 @@
+# Emerald Arena 0.12.0
+
+[Download installer](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.12.0/Emerald-Arena-0.12.0.zip) · [Full BPS patch](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.12.0/Emerald-Arena-0.12.0-full.bps) · [Notes, checks and remaining limitations](release-0.12.0.md)
+
+Community stability update: trainer handoffs, switching, status effects, four move profiles and ten story sprite sets. Integrated roster: 162. Back up in-game saves; never reuse emulator states across versions. Unsupported battles still use classic fallback.
+
 # Emerald Arena 0.11.0
 
 [Download](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.11.0/Emerald-Arena-0.11.0.zip) · [Full BPS patch](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.11.0/Emerald-Arena-0.11.0-full.bps) · [Gameplay](media/emerald-arena-protect-playtest.mp4)

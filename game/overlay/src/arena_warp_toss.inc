@@ -92,6 +92,7 @@ static bool8 TossStart(u8 side)
     if(sDecoys[side^1].life&&sDecoys[side^1].age>=24)
     {DecoyBreak(side^1);gArenaWarpTossTelemetry[3]++;return FALSE;}
     if(CoverSegment(side,MOVE_SEISMIC_TOSS,b->x/Q,b->y/Q,t->x/Q,t->y/Q,8))return FALSE;
+    if(GuardIntercept(side,MOVE_SEISMIC_TOSS))return FALSE;
     TossBegin(side);
     return TossActive();
 }

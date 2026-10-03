@@ -50,6 +50,7 @@
 #include "text.h"
 #include "window.h"
 #include "util.h"
+#include "random.h"
 #include "constants/abilities.h"
 #include "constants/game_stat.h"
 #include "constants/battle_move_effects.h"
@@ -128,6 +129,7 @@ struct ArenaState
     struct ArenaPoint goal, waypoint, observed, previous;
     u16 thinkTimer, aimTimer, goalTimer;
     u8 aiState, style, reaction, aimError, cueSprite, aimSprite;
+    u8 stalledTicks;
     u8 hitstop, attackBuffer, dashBuffer;
     s8 dashRequestX, dashRequestY;
     u32 lastBlast;
@@ -142,6 +144,8 @@ static EWRAM_DATA struct {
     s32 x, y;
     u32 personality;
     u8 party, facing, alive;
+    u16 cooldown, dashCooldown, burnClock;
+    u8 moveSlot, statusActions;
 } sArenaResident[2] = {};
 static EWRAM_DATA u8 sArenaSendoutMask = 3;
 static EWRAM_DATA u8 sFlameReach[2]={},sFlameElementMask[2]={};
@@ -186,6 +190,8 @@ static bool8 ElementReact(struct ArenaShot *shot);
 static void GuardReset(void);
 static void GuardTick(void);
 static void GuardDraw(void);
+static bool8 ClashBusy(void);
+static void ClashReset(void);
 static void GuardStart(u8 side);
 static bool8 GuardIntercept(u8 side,u16 move);
 static bool8 GuardBusy(void);
@@ -211,6 +217,7 @@ EWRAM_DATA u16 gArenaRenderTelemetry[8] = {};
 static EWRAM_DATA u8 sHudRecovery=0;
 static EWRAM_DATA bool8 sMoveMenuReady=FALSE;
 EWRAM_DATA u8 gArenaMenuRequest=0; // 1: native bag, 2: native party
+EWRAM_DATA u16 gArenaCompatibilityReason=ARENA_COMPAT_OK;
 static EWRAM_DATA u8 sPausePage=0;
 static void ArenaExpFieldTick(void);
 
@@ -456,22 +463,38 @@ static u8 FirstMove(u8 side, bool8 needsPP)
     for (i = 0; i < MAX_MON_MOVES; i++)
         if (SupportedMove(gBattleMons[side].moves[i]) && gBattleMoves[gBattleMons[side].moves[i]].power
             && (!needsPP || gBattleMons[side].pp[i])) return i;
-    // A moveset with only adapted buffs/debuffs is not an arena encounter.
-    // For example, do not turn Seedot's unadapted Bide into a harmless AI.
+    // Legal status-only sets (e.g. newly caught Ralts/Cascoon) remain usable.
+    // Never hide an unsupported action such as Bide behind an adapted buff.
+    for (i = 0; i < MAX_MON_MOVES; i++)
+        if (gBattleMons[side].moves[i] && !SupportedMove(gBattleMons[side].moves[i]))
+            return MAX_MON_MOVES;
+    for (i = 0; i < MAX_MON_MOVES; i++)
+        if (SupportedMove(gBattleMons[side].moves[i])
+            && (!needsPP || gBattleMons[side].pp[i])) return i;
     return MAX_MON_MOVES;
 }
 
 static bool8 SupportedBattler(u8 side)
 {
     u32 i;
+    gArenaCompatibilityReason=ARENA_COMPAT_ITEM|(side<<8);
     // Only tested native damage, stat changes and burns enter the arena.
     // Other status/turn/item mechanics retain the complete classic battle.
-    if ((gBattleMons[side].item && GetItemHoldEffect(gBattleMons[side].item) != HOLD_EFFECT_RESTORE_HP
+    if ((GetItemHoldEffect(gBattleMons[side].item) != HOLD_EFFECT_NONE
+        && GetItemHoldEffect(gBattleMons[side].item) != HOLD_EFFECT_RESTORE_HP
         && GetItemHoldEffect(gBattleMons[side].item) != HOLD_EFFECT_PREVENT_EVOLVE)
-        || (gBattleMons[side].status1 & ~STATUS1_BURN)
-        || (gBattleMons[side].status2 & ~(STATUS2_FOCUS_ENERGY|STATUS2_DEFENSE_CURL))
-        || gStatuses3[side] || gBattleMons[side].hp == 0 || FirstMove(side, TRUE) == MAX_MON_MOVES)
+        && !(GetItemHoldEffect(gBattleMons[side].item)==HOLD_EFFECT_CURE_BRN
+             && IS_BATTLER_OF_TYPE(side,TYPE_FIRE)))
         return FALSE;
+    gArenaCompatibilityReason=ARENA_COMPAT_STATUS|(side<<8);
+    if (
+           (gBattleMons[side].status1 & ~(STATUS1_BURN|STATUS1_POISON|STATUS1_PARALYSIS))
+        || (gBattleMons[side].status2 & ~(STATUS2_FOCUS_ENERGY|STATUS2_DEFENSE_CURL))
+        || gStatuses3[side] || gBattleMons[side].hp == 0)
+        return FALSE;
+    gArenaCompatibilityReason=ARENA_COMPAT_MOVES|(side<<8);
+    if(FirstMove(side,TRUE)==MAX_MON_MOVES)return FALSE;
+    gArenaCompatibilityReason=ARENA_COMPAT_ABILITY|(side<<8);
     switch (gBattleMons[side].ability)
     {
     case ABILITY_NONE:
@@ -524,12 +547,15 @@ static bool8 SupportedBattler(u8 side)
     case ABILITY_MAGMA_ARMOR: // Freeze moves still unsupported.
     case ABILITY_FLASH_FIRE:
     case ABILITY_WATER_ABSORB:
-        return TRUE;
+    case ABILITY_SHED_SKIN: // Timed native-rate cure below, including saved burns.
+    case ABILITY_SYNCHRONIZE:
+    case ABILITY_IMMUNITY:
     case ABILITY_STATIC:
-    case ABILITY_EFFECT_SPORE:
     case ABILITY_POISON_POINT:
-    case ABILITY_CUTE_CHARM:
     case ABILITY_FLAME_BODY:
+        return TRUE;
+    case ABILITY_EFFECT_SPORE:
+    case ABILITY_CUTE_CHARM:
         // Do not silently suppress a contact ability. These can enter only if
         // the opposing arena moves cannot trigger it; otherwise the complete
         // encounter stays in native classic mode, including its status rolls.
@@ -537,7 +563,10 @@ static bool8 SupportedBattler(u8 side)
             if (SupportedMove(gBattleMons[side ^ 1].moves[i])
                 && gBattleMons[side ^ 1].pp[i]
                 && (gBattleMoves[gBattleMons[side ^ 1].moves[i]].flags & FLAG_MAKES_CONTACT))
+            {
+                gArenaCompatibilityReason=ARENA_COMPAT_CONTACT|(side<<8);
                 return FALSE;
+            }
         return TRUE;
     }
     return FALSE;
@@ -567,14 +596,17 @@ void RealtimeArena_ResetBattle(void)
 
 static bool8 Eligible(void)
 {
+    gArenaCompatibilityReason=ARENA_COMPAT_LAB;
 #if ARENA_LAB
     if (gArenaLabMailbox.classic) return FALSE;
 #endif
     // FIRST_BATTLE is still a 1v1 with a real starter and native return script.
+    gArenaCompatibilityReason=ARENA_COMPAT_FORMAT;
     if (sArena.classic || gBattlersCount != 2 || (gBattleTypeFlags & ~(BATTLE_TYPE_FIRST_BATTLE | BATTLE_TYPE_IS_MASTER | BATTLE_TYPE_TRAINER))
-        || gAbsentBattlerFlags
-        || !SupportedBattler(0) || !SupportedBattler(1))
+        || gAbsentBattlerFlags)
         return FALSE;
+    if(!SupportedBattler(0) || !SupportedBattler(1))return FALSE;
+    gArenaCompatibilityReason=ARENA_COMPAT_OK;
     return TRUE;
 }
 
@@ -589,6 +621,15 @@ bool8 RealtimeArena_TryStart(void)
 {
     if(!Eligible())
     {
+        // Quiet faint resolution intentionally keeps the arena framebuffer.
+        // If the replacement needs classic mechanics, rebuild its complete UI
+        // before a controller writes a ChooseAction menu into that framebuffer.
+        if(gRealtimeArenaQuietResult)
+        {
+            gRealtimeArenaQuietIntro=FALSE;
+            RealtimeArena_ShowResultUi();
+            return TRUE;
+        }
         // An unsupported replacement must retain the real classic fallback.
         if(gRealtimeArenaQuietIntro)
         {gRealtimeArenaQuietIntro=FALSE;SetGpuReg(REG_OFFSET_DISPCNT,gArenaQuietDisplay);}
@@ -804,6 +845,26 @@ static u8 OpponentGraphics(void)
     {
     case TRAINER_PIC_HIKER: return OBJ_EVENT_GFX_HIKER;
     case TRAINER_PIC_BUG_CATCHER: return OBJ_EVENT_GFX_BUG_CATCHER;
+    case TRAINER_PIC_LASS: return OBJ_EVENT_GFX_LASS;
+    case TRAINER_PIC_YOUNGSTER: return OBJ_EVENT_GFX_YOUNGSTER;
+    case TRAINER_PIC_CAMPER: return OBJ_EVENT_GFX_CAMPER;
+    case TRAINER_PIC_PICNICKER: return OBJ_EVENT_GFX_PICNICKER;
+    case TRAINER_PIC_BEAUTY: return OBJ_EVENT_GFX_BEAUTY;
+    case TRAINER_PIC_FISHERMAN: return OBJ_EVENT_GFX_FISHERMAN;
+    case TRAINER_PIC_SAILOR: return OBJ_EVENT_GFX_SAILOR;
+    case TRAINER_PIC_GENTLEMAN: return OBJ_EVENT_GFX_GENTLEMAN;
+    case TRAINER_PIC_RICH_BOY: return OBJ_EVENT_GFX_RICH_BOY;
+    case TRAINER_PIC_BLACK_BELT: return OBJ_EVENT_GFX_BLACK_BELT;
+    case TRAINER_PIC_HEX_MANIAC: return OBJ_EVENT_GFX_HEX_MANIAC;
+    case TRAINER_PIC_NINJA_BOY: return OBJ_EVENT_GFX_NINJA_BOY;
+    case TRAINER_PIC_POKEFAN_M: return OBJ_EVENT_GFX_POKEFAN_M;
+    case TRAINER_PIC_POKEFAN_F: return OBJ_EVENT_GFX_POKEFAN_F;
+    case TRAINER_PIC_EXPERT_M: return OBJ_EVENT_GFX_EXPERT_M;
+    case TRAINER_PIC_EXPERT_F: return OBJ_EVENT_GFX_EXPERT_F;
+    case TRAINER_PIC_AQUA_GRUNT_M: return OBJ_EVENT_GFX_AQUA_MEMBER_M;
+    case TRAINER_PIC_AQUA_GRUNT_F: return OBJ_EVENT_GFX_AQUA_MEMBER_F;
+    case TRAINER_PIC_MAGMA_GRUNT_M: return OBJ_EVENT_GFX_MAGMA_MEMBER_M;
+    case TRAINER_PIC_MAGMA_GRUNT_F: return OBJ_EVENT_GFX_MAGMA_MEMBER_F;
     case TRAINER_PIC_SWIMMER_M: return OBJ_EVENT_GFX_SWIMMER_M;
     case TRAINER_PIC_SWIMMER_F: return OBJ_EVENT_GFX_SWIMMER_F;
     case TRAINER_PIC_LEADER_JUAN: return OBJ_EVENT_GFX_JUAN;
@@ -888,6 +949,7 @@ static void CB2_ArenaInit(void)
     CoverReset();
     BarrierReset();
     GuardReset();
+    ClashReset();
     SpecialReset();
     ArenaRender_Reset();
     FreeAllSpritePalettes();
@@ -922,8 +984,18 @@ static void CB2_ArenaInit(void)
         }
     }
     LoadSpriteSheet(&sShotSheet);
+    // The volcanic plateau is deliberately open: no indoor furniture or
+    // invisible obstacles floating above its basalt floor.
+    if(gArenaStage==16)
+        for(i=0;i<ARENA_OBSTACLES;i++)
+        {gArenaProps[i].broken=TRUE;gArenaProps[i].hp=0;ArenaNav_SetObstacle(i,FALSE);}
     LoadSpritePalette(&sShotPalettes[0]);
     LoadSpritePalette(&sShotPalettes[1]);
+    if(gArenaStage==16)
+    {
+        static const u16 basaltShadow[]={RGB(3,2,2),RGB(1,1,1)};
+        LoadPalette(basaltShadow,OBJ_PLTT_ID(IndexOfSpritePaletteTag(SHOT_TAG))+3,sizeof(basaltShadow));
+    }
     LoadSpriteSheet(&sShadowSheet);
     LoadAimMarker();
     ArenaFeedback_Init();
@@ -988,6 +1060,23 @@ static void CB2_ArenaInit(void)
         }
         body->moveSlot = FirstMove(i, TRUE);
         body->cooldown = i ? 30 : 15;
+        if(!(sArenaSendoutMask & (1 << i)))
+        {
+            body->cooldown=sArenaResident[i].cooldown;
+            body->dashCooldown=sArenaResident[i].dashCooldown;
+            body->burnClock=sArenaResident[i].burnClock;
+            body->statusActions=sArenaResident[i].statusActions;
+            if(sArenaResident[i].moveSlot<MAX_MON_MOVES
+                && SupportedMove(gBattleMons[i].moves[sArenaResident[i].moveSlot])
+                && gBattleMons[i].pp[sArenaResident[i].moveSlot])
+                body->moveSlot=sArenaResident[i].moveSlot;
+        }
+        else if(sArenaResident[i].alive)
+        {
+            // A voluntary replacement has a short commitment cost. Forced
+            // replacements after fainting and first send-outs are exempt.
+            body->cooldown=60;body->dashCooldown=60;
+        }
         body->sprite = CreateSprite(&template, body->x / Q, body->y / Q, 0);
         body->shadow = CreateSprite(&sShadowTemplate, body->x / Q, body->y / Q + 8, 10);
         gSprites[body->sprite].oam.paletteNum = i;
@@ -1055,7 +1144,8 @@ static u16 Speed(u8 side)
     u32 speed=gBattleMons[side].speed;
     u8 stage=gBattleMons[side].statStages[STAT_SPEED];
     speed=speed*gStatStageRatios[stage][0]/gStatStageRatios[stage][1];
-    return StormSpeed(side,256 + Clamp(speed, 1, 120) * 2);
+    speed=StormSpeed(side,256 + Clamp(speed, 1, 120) * 2);
+    return (gBattleMons[side].status1&STATUS1_PARALYSIS)?max(64,speed/4):speed;
 }
 
 static u8 Facing(s32 dx, s32 dy)
@@ -1201,6 +1291,12 @@ static void BeginShot(u8 side, s32 targetX, s32 targetY)
     const struct ArenaMoveProfile *profile = ArenaMoves_Get(gBattleMons[side].moves[body->moveSlot]);
     s32 dx,dy,len;
     if (!profile || body->shotTimer || PsychicBusy(side) || SpecialBusy(side) || !gBattleMons[side].pp[body->moveSlot]) return;
+    if((gBattleMons[side].status1&STATUS1_PARALYSIS) && Random()%4==0)
+    {
+        body->cooldown=30;
+        ArenaFeedback_Impact(side,body->x/Q,body->y/Q,0,ARENA_FEEDBACK_MISS);
+        return;
+    }
     body->shotSlot = body->moveSlot;
     body->aimX = targetX; body->aimY = targetY;
     body->shotFacing = Facing(targetX - body->x, targetY - body->y);
@@ -1323,6 +1419,11 @@ static void AiRoute(void)
     if (GhostBody(1)) { sArena.waypoint = sArena.goal; return; }
     if (ArenaNav_NextWaypoint(body->x / Q, body->y / Q, sArena.goal.x, sArena.goal.y, &sArena.waypoint))
         gArenaAiTelemetry.paths++;
+    else
+    {
+        sArena.waypoint.x=body->x/Q;sArena.waypoint.y=body->y/Q;
+        sArena.goalTimer=0;
+    }
 }
 
 static void AiChooseGoal(void)
@@ -1354,7 +1455,7 @@ static void AiChooseGoal(void)
             p.y = Clamp(sArena.observed.y + offsets[i][1] * preferred / Q, ARENA_MIN_Y, ARENA_MAX_Y);
         }
         else p = ArenaNav_Corner(i - 8);
-        if (!ArenaNav_CanStand(p.x, p.y)
+        if (!ArenaNav_CanStand(p.x, p.y) || !CoverCanStep(p.x,p.y)
             || !ArenaNav_LineClear(p.x, p.y, sArena.observed.x, sArena.observed.y, 2)) continue;
         score = Abs(ArenaNav_Distance(p.x,p.y,sArena.observed.x,sArena.observed.y) - preferred) * 3
             + ArenaNav_Distance(body->x/Q,body->y/Q,p.x,p.y) + AiRandom() % 24;
@@ -1560,7 +1661,22 @@ static void TickEnemy(void)
     dx = sArena.waypoint.x * Q - body->x;
     dy = sArena.waypoint.y * Q - body->y;
     len = max(Abs(dx), Abs(dy)) + min(Abs(dx), Abs(dy)) / 2;
-    if (len > Q) MoveDelta(1, dx * Speed(1) / len, dy * Speed(1) / len);
+    if (len > Q)
+    {
+        s32 oldX=body->x,oldY=body->y;
+        MoveDelta(1, dx * Speed(1) / len, dy * Speed(1) / len);
+        if(oldX==body->x && oldY==body->y)
+        {
+            if(++sArena.stalledTicks>=24)
+            {
+                // Moving cover or the other body can invalidate a static
+                // route. Replan instead of pushing forever into that point.
+                sArena.stalledTicks=0;sArena.goalTimer=0;
+                AiChooseGoal();
+            }
+        }
+        else sArena.stalledTicks=0;
+    }
 }
 
 static void ApplyResolvedHit(u8 side,u16 move,s32 damage);
@@ -1625,11 +1741,20 @@ static void ApplyResolvedHit(u8 side,u16 move,s32 damage)
                                 target->x/Q,target->y/Q,healing);
         }
         target->flash=8;
+        if((gBattleMoves[move].flags&FLAG_MAKES_CONTACT) && gBattleMons[side].hp)
+        {
+            u8 ability=gBattleMons[targetSide].ability;
+            u8 effect=ability==ABILITY_STATIC?MOVE_EFFECT_PARALYSIS:
+                ability==ABILITY_POISON_POINT?MOVE_EFFECT_POISON:
+                ability==ABILITY_FLAME_BODY?MOVE_EFFECT_BURN:0;
+            if(effect && Random()%3==0)
+                RealtimeArena_InflictStatus(targetSide,side,effect,TRUE);
+        }
         target->knockX=sArena.bodies[side].attackX*(move==MOVE_QUICK_ATTACK?4:2);
         target->knockY=sArena.bodies[side].attackY*(move==MOVE_QUICK_ATTACK?4:2);
         gRealtimeArenaTelemetry.hits[side]++;
         gRealtimeArenaTelemetry.lastDamage=damage;
-        if(hp || move==MOVE_SUPERPOWER || move==MOVE_METEOR_MASH)
+        if(hp || move==MOVE_SUPERPOWER || move==MOVE_METEOR_MASH || move==MOVE_STEEL_WING)
         {
             u8 effects=RealtimeArena_ResolveSecondary(side,targetSide,move);
             if(effects&1){gArenaMoveTelemetry.statChanges[side]++;gArenaAdventureTelemetry[0]++;}
@@ -1682,6 +1807,7 @@ static void ApplyResolvedHit(u8 side,u16 move,s32 damage)
 #include "arena_storm.inc"
 #include "arena_warp_toss.inc"
 #include "arena_guard.inc"
+#include "arena_flame_clash.inc"
 
 static void DrawPsychicAuras(void)
 {
@@ -1997,11 +2123,24 @@ static void TickBurn(void)
     for(side=0;side<2&&!sArena.resultTimer;side++)
     {
         struct ArenaBody *body=&sArena.bodies[side];
-        if((gBattleMons[side].status1&STATUS1_BURN) && gBattleMons[side].hp)
+        if((gBattleMons[side].status1&(STATUS1_BURN|STATUS1_POISON|STATUS1_PARALYSIS)) && gBattleMons[side].hp)
         {
             if(++body->burnClock==300)
             {
-                u16 damage=min(gBattleMons[side].hp,max(1,gBattleMons[side].maxHP/8));
+                u16 damage;
+                // Gen III Shed Skin checks once per residual interval, not
+                // every rendered frame. Persist the cure into the real party.
+                if(gBattleMons[side].ability==ABILITY_SHED_SKIN && Random()%3==0)
+                {
+                    gBattleMons[side].status1=0;body->burnClock=0;
+                    SetMonData(side?&gEnemyParty[gBattlerPartyIndexes[side]]:&gPlayerParty[gBattlerPartyIndexes[side]],
+                               MON_DATA_STATUS,&gBattleMons[side].status1);
+                    sArena.hudDirty=TRUE;
+                    continue;
+                }
+                if(!(gBattleMons[side].status1&(STATUS1_BURN|STATUS1_POISON)))
+                {body->burnClock=0;continue;}
+                damage=min(gBattleMons[side].hp,max(1,gBattleMons[side].maxHP/8));
                 body->burnClock=0;gBattleMons[side].hp-=damage;
                 SetMonData(side?&gEnemyParty[gBattlerPartyIndexes[side]]:&gPlayerParty[gBattlerPartyIndexes[side]],
                            MON_DATA_HP,&gBattleMons[side].hp);
@@ -2030,14 +2169,14 @@ static void CB2_Arena(void)
     gArenaFrameTelemetry.updates++;
     if(gap>gArenaFrameTelemetry.maxGap)gArenaFrameTelemetry.maxGap=gap;
     if(gap>1)gArenaFrameTelemetry.missedVBlanks+=gap-1;
-    if (JOY_NEW(SELECT_BUTTON) && !GuardBusy() && !SpecialBusy(0) && !SpecialBusy(1) && !sArena.resultTimer && sCapture.state==ARENA_CAPTURE_IDLE) { gArenaMenuRequest=2; ArenaExit(FALSE); return; }
+    if (JOY_NEW(SELECT_BUTTON) && !ClashBusy() && !GuardBusy() && !SpecialBusy(0) && !SpecialBusy(1) && !sArena.resultTimer && sCapture.state==ARENA_CAPTURE_IDLE) { gArenaMenuRequest=2; ArenaExit(FALSE); return; }
     if (JOY_NEW(START_BUTTON) && !sArena.resultTimer && sCapture.state==ARENA_CAPTURE_IDLE)
     {
         sArena.paused ^= TRUE;
         DrawStage();
         sArena.hudDirty = TRUE;
     }
-    if(!GuardBusy()&&!SpecialBusy(0)&&!SpecialBusy(1))CaptureInput();
+    if(!ClashBusy()&&!GuardBusy()&&!SpecialBusy(0)&&!SpecialBusy(1))CaptureInput();
     if(sArena.paused)
     {
         u16 keys=gMain.newKeys&DPAD_ANY;
@@ -2049,7 +2188,7 @@ static void CB2_Arena(void)
         }
         if(JOY_NEW(B_BUTTON))
         {sArena.paused=FALSE;DrawStage();sArena.hudDirty=TRUE;}
-        if(sPausePage && JOY_NEW(A_BUTTON) && !GuardBusy() && !SpecialBusy(0) && !SpecialBusy(1))
+        if(sPausePage && JOY_NEW(A_BUTTON) && !ClashBusy() && !GuardBusy() && !SpecialBusy(0) && !SpecialBusy(1))
         {gArenaMenuRequest=sPausePage;ArenaExit(FALSE);return;}
         if(!sPausePage && slot<MAX_MON_MOVES && SupportedMove(gBattleMons[0].moves[slot]))
         {
@@ -2061,6 +2200,20 @@ static void CB2_Arena(void)
     }
     if (!sArena.paused)
     {
+        // Exhausting every adapted move must not leave a powerless actor
+        // trapped in the arena. Finish committed actions, then let Emerald
+        // offer remaining native moves or Struggle with its real PP rules.
+        if (!sArena.resultTimer && sCapture.state==ARENA_CAPTURE_IDLE
+            && !ClashBusy() && !GuardBusy() && !SpecialBusy(0) && !SpecialBusy(1)
+            && !PsychicBusy(0) && !PsychicBusy(1)
+            && !sArena.bodies[0].shotTimer && !sArena.bodies[1].shotTimer
+            && !sArena.bodies[0].actionLife && !sArena.bodies[1].actionLife
+            && (FirstMove(0,TRUE)==MAX_MON_MOVES || FirstMove(1,TRUE)==MAX_MON_MOVES))
+        {
+            bool8 flying=FALSE;
+            for(i=0;i<SHOTS_COUNT;i++)if(sArena.shots[i].life)flying=TRUE;
+            if(!flying){ArenaExit(FALSE);return;}
+        }
         sArena.frame++;
         gRealtimeArenaTelemetry.frames++;
         if (sArena.resultTimer)
@@ -2076,7 +2229,8 @@ static void CB2_Arena(void)
         else
         {
             BufferPlayerActions();
-            if(TossActive()){SpecialTick();TickShots();frozen=TRUE;}
+            if(ClashBusy()){ClashTick();frozen=TRUE;}
+            else if(TossActive()){SpecialTick();TickShots();frozen=TRUE;}
             else if(CaptureLocked() || ((sCapture.state==ARENA_CAPTURE_AIM || sCapture.state==ARENA_CAPTURE_THROW) && sArena.frame%3)) frozen=TRUE;
             else if (sArena.hitstop) { sArena.hitstop--; frozen = TRUE; }
             else
@@ -2093,7 +2247,8 @@ static void CB2_Arena(void)
                 TickEnemy();
                 now=gMain.vblankCounter1*228+(REG_VCOUNT+68)%228;
                 gArenaFrameTelemetry.scanlines[1]=now-phaseStamp;phaseStamp=now;
-                TickPendingShots(); TickActions(); TickShots(); TickPsychic();
+                TickPendingShots(); ClashDetect();
+                if(!ClashBusy()){TickActions(); TickShots(); TickPsychic();}
                 if(!sArena.resultTimer){ElementsTick();StormTick();}
                 TickBurn();
                 for (i = 0; i < 2 && !sArena.resultTimer; i++)
@@ -2297,8 +2452,8 @@ static void CB2_Arena(void)
         gArenaMoveTelemetry.actionMove[i]=profile->move;
         ArenaMoveFx_Action(i,profile,body->x/Q,body->y/Q,body->shotFacing,body->actionAge,
             body->actionLife!=0&&profile->move!=MOVE_PROTECT&&profile->move!=MOVE_DOUBLE_TEAM&&profile->move!=MOVE_TELEPORT&&profile->move!=MOVE_SEISMIC_TOSS&&profile->move!=MOVE_DIG&&profile->move!=MOVE_FLY&&profile->move!=MOVE_SUBSTITUTE&&profile->move!=MOVE_SMOKESCREEN,sArena.paused);
-        ArenaMoveFx_Flame(i,profile->move,body->x/Q,body->y/Q-8,body->shotFacing,body->actionAge,sFlameReach[i],
-            ArenaMoves_Beam(profile->move)&&body->actionLife&&!sArena.paused&&gBattleMons[i].hp);
+        ArenaMoveFx_Flame(i,profile->move,body->x/Q,body->y/Q-8,body->shotFacing,ClashBusy()?sFlameClash.age:body->actionAge,sFlameReach[i],
+            ArenaMoves_Beam(profile->move)&&body->actionLife&&!sArena.paused&&gBattleMons[i].hp,ClashBusy());
     }
     {
         u8 warmth=0;
@@ -2321,25 +2476,26 @@ static void CB2_Arena(void)
         && (JOY_HELD(A_BUTTON) || sArena.bodies[0].shotTimer);
     gSprites[sArena.aimSprite].x = DecoyAim(1,FALSE) / Q;
     gSprites[sArena.aimSprite].y = DecoyAim(1,TRUE) / Q;
-    gSprites[sArena.aimSprite].invisible = !gArenaCombatTelemetry.aimVisible;
+    gSprites[sArena.aimSprite].invisible = !gArenaCombatTelemetry.aimVisible || ClashBusy();
     gSprites[sArena.aimSprite].oam.paletteNum = IndexOfSpritePaletteTag(SHOT_TAG
         + (gArenaCombatTelemetry.aimBlocked ? 1 : sArena.bodies[0].cooldown ? 2 : 0));
     gSprites[sArena.cueSprite].x = sArena.bodies[1].x / Q;
     gSprites[sArena.cueSprite].y = sArena.bodies[1].y / Q + 14;
-    gSprites[sArena.cueSprite].invisible = sArena.aiState != AI_AIM || sArena.resultTimer;
+    gSprites[sArena.cueSprite].invisible = sArena.aiState != AI_AIM || sArena.resultTimer || ClashBusy();
     DecoyDraw();
     SpecialDraw();
     MonVisualScaleApply();
     CoverDraw();
     BarrierDraw();
     GuardDraw();
+    ClashDraw();
     CaptureDraw();
     gArenaAiTelemetry.state = sArena.aiState;
     gArenaAiTelemetry.goalX = sArena.goal.x; gArenaAiTelemetry.goalY = sArena.goal.y;
     gArenaAiTelemetry.waypointX = sArena.waypoint.x; gArenaAiTelemetry.waypointY = sArena.waypoint.y;
     gRealtimeArenaTelemetry.paused = sArena.paused;
     gRealtimeArenaTelemetry.selectedMove = sArena.bodies[0].moveSlot;
-    ArenaFeedback_Update(sArena.paused, frozen && !CaptureLocked());
+    ArenaFeedback_Update(sArena.paused, frozen && !CaptureLocked() && !ClashBusy());
     ArenaTerrain_Draw(sArena.paused,frozen);
     ElementsDraw();
     {
@@ -2387,6 +2543,12 @@ static void ArenaExit(bool8 fainted)
         sArenaResident[i].x=sArena.bodies[i].x;
         sArenaResident[i].y=sArena.bodies[i].y;
         sArenaResident[i].facing=sArena.bodies[i].facing;
+        sArenaResident[i].cooldown=max(sArena.bodies[i].cooldown,
+            sArena.bodies[i].shotTimer+sArena.bodies[i].actionLife);
+        sArenaResident[i].dashCooldown=sArena.bodies[i].dashCooldown;
+        sArenaResident[i].burnClock=sArena.bodies[i].burnClock;
+        sArenaResident[i].moveSlot=sArena.bodies[i].moveSlot;
+        sArenaResident[i].statusActions=sArena.bodies[i].statusActions;
     }
     CaptureReset();
     DecoyHide();
@@ -2410,7 +2572,7 @@ static void ArenaExit(bool8 fainted)
         for(i=0;i<2;i++)
         {
             ArenaMoveFx_Action(i,NULL,0,0,0,0,FALSE,TRUE);
-            ArenaMoveFx_Flame(i,MOVE_FLAMETHROWER,0,0,0,0,0,FALSE);
+            ArenaMoveFx_Flame(i,MOVE_FLAMETHROWER,0,0,0,0,0,FALSE,FALSE);
         }
         gSprites[sArena.aimSprite].invisible=TRUE;
         gSprites[sArena.cueSprite].invisible=TRUE;

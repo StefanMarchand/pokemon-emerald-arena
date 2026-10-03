@@ -10,6 +10,7 @@ bool8 RealtimeArena_CanSkipIntro(void);
 bool8 RealtimeArena_IsFlooded(s16 x, s16 y);
 s32 RealtimeArena_ResolveDamage(u8 attacker, u8 target, u16 move);
 u8 RealtimeArena_ResolveSecondary(u8 attacker, u8 target, u16 move);
+bool8 RealtimeArena_InflictStatus(u8 attacker, u8 target, u8 effect, bool8 ability);
 bool8 RealtimeArena_ResolveLeer(u8 attacker, u8 target);
 s8 RealtimeArena_StatChange(u16 move, u8 *stat, bool8 *self);
 bool8 RealtimeArena_ResolveStatMove(u8 attacker, u8 target, u16 move);
@@ -22,6 +23,11 @@ void RealtimeArena_DemoFieldCallback(void);
 void RealtimeArena_PracticeTick(void);
 void RealtimeArena_QueueExp(u8 party, u32 amount);
 extern u8 gArenaMenuRequest;
+// Read-only compatibility diagnosis: low byte reason, high byte battler side.
+enum { ARENA_COMPAT_OK, ARENA_COMPAT_ITEM, ARENA_COMPAT_STATUS,
+       ARENA_COMPAT_MOVES, ARENA_COMPAT_ABILITY, ARENA_COMPAT_CONTACT,
+       ARENA_COMPAT_FORMAT, ARENA_COMPAT_LAB };
+extern u16 gArenaCompatibilityReason;
 
 // Read-only telemetry for tests of the actual ROM, never a second party.
 struct RealtimeArenaTelemetry

@@ -25,6 +25,7 @@ static void LoadArenaBiome(void)
     switch(map)
     {
     case MAP_PETALBURG_WOODS:gArenaBiome=0;gArenaStage=0;break;
+    case MAP_MT_CHIMNEY:gArenaBiome=2;gArenaStage=16;break;
     case MAP_ROUTE119:
     case MAP_ROUTE120:if(gArenaBiome!=1){gArenaBiome=0;gArenaStage=5;}break;
     case MAP_ROUTE109:if(gArenaBiome!=1){gArenaBiome=3;gArenaStage=6;}break;
@@ -45,7 +46,7 @@ static void LoadArenaBiome(void)
         if(pic>=TRAINER_PIC_LEADER_ROXANNE&&pic<=TRAINER_PIC_LEADER_JUAN)
             gArenaStage=8+pic-TRAINER_PIC_LEADER_ROXANNE;
     }
-    if(gArenaStage>=8)gArenaBiome=4;
+    if(gArenaStage>=8&&gArenaStage<16)gArenaBiome=4;
     LoadPalette(sStagePalettes[gArenaStage],0,512);
     StormBiome(sStageTiles[gArenaStage],sStagePalettes[gArenaStage]);
     LoadBgTiles(1,sStageTiles[gArenaStage],38400,0);

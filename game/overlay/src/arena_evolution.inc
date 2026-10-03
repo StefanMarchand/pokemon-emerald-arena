@@ -9,8 +9,11 @@
 static void DestroyShot(struct ArenaShot *shot);
 static const u32 sEvolutionFrames[] = INCBIN_U32("graphics/arena/evolution/effect.4bpp");
 static const u16 sEvolutionPalette[] = INCBIN_U16("graphics/arena/evolution/palette.gbapal");
+static const u32 sSpectralEvolutionFrames[] = INCBIN_U32("graphics/arena/evolution/spectral.4bpp");
+static const u16 sSpectralEvolutionPalette[] = INCBIN_U16("graphics/arena/evolution/spectral.gbapal");
 static EWRAM_DATA struct {
     MainCallback callback1;
+    const u32 *frames;
     u16 age, species, oldSpecies, hpBefore, savedPalette[16];
     u8 party, sprite, bank, frame, committed;
 } sEvolution = {};
@@ -120,10 +123,10 @@ static void CB2_ArenaEvolution(void)
     if (sEvolution.age >= EVOLUTION_LEADIN + EVOLUTION_DURATION + EVOLUTION_SETTLE)
     { EvolutionFinish(FALSE); return; }
     EvolutionPose(age);
-    BlendPalette(16, 240, light, RGB(2,5,8));
+    BlendPalette(16, 240, light, sEvolution.oldSpecies == SPECIES_GASTLY ? RGB(3,0,6) : RGB(2,5,8));
     BlendPalette(OBJ_PLTT_ID(0), 16,
         age < 40 ? age/5 : age < 112 ? 8+(age-40)/10 : age < 140 ? 16 : age < 180 ? (180-age)*16/40 : 0,
-        RGB_WHITE);
+        sEvolution.oldSpecies == SPECIES_GASTLY ? RGB(26,22,31) : RGB_WHITE);
     // Lift the silhouette without moving the combat position or shadow.
     p->y2 = age < 50 ? -age/12 : age < 150 ? -4 : age < 190 ? -(190-age)/10 : 0;
     if (sEvolution.sprite < MAX_SPRITES)
@@ -134,7 +137,7 @@ static void CB2_ArenaEvolution(void)
         fx->y = body->y / Q - 9;
         if (frame != sEvolution.frame)
         {
-            ArenaRender_Copy(sEvolutionFrames + frame*512,
+            ArenaRender_Copy(sEvolution.frames + frame*512,
                 (u8 *)OBJ_VRAM0 + fx->oam.tileNum*32, 2048);
             sEvolution.frame = frame;
         }
@@ -164,6 +167,7 @@ bool8 RealtimeArena_TryEvolution(u8 party)
     if (oldSpecies == SPECIES_NINCADA) return FALSE;
     species = GetEvolutionTargetSpecies(mon, EVO_MODE_NORMAL, 0);
     if (!species || !ArenaSprites_Get(species)) return FALSE;
+    if (oldSpecies == SPECIES_GASTLY) sheet.data = sSpectralEvolutionFrames;
     // Borrow the inactive enemy projectile bank, NOT the player's bank:
     // native floor shadows share colors 3/4 of the player's palette.
     bank = IndexOfSpritePaletteTag(SHOT_TAG+1);
@@ -172,11 +176,12 @@ bool8 RealtimeArena_TryEvolution(u8 party)
     if (sprite == MAX_SPRITES)
     { FreeSpriteTilesByTag(EVOLUTION_TAG); return FALSE; }
     memset(&sEvolution, 0, sizeof(sEvolution));
+    sEvolution.frames = oldSpecies == SPECIES_GASTLY ? sSpectralEvolutionFrames : sEvolutionFrames;
     sEvolution.sprite=sprite;sEvolution.bank=bank;sEvolution.party=party;
     sEvolution.species=species;sEvolution.oldSpecies=oldSpecies;sEvolution.frame=255;
     sEvolution.hpBefore=gBattleMons[0].hp;
     memcpy(sEvolution.savedPalette, &gPlttBufferUnfaded[OBJ_PLTT_ID(bank)], 32);
-    LoadPalette(sEvolutionPalette, OBJ_PLTT_ID(bank), 32);
+    LoadPalette(oldSpecies == SPECIES_GASTLY ? sSpectralEvolutionPalette : sEvolutionPalette, OBJ_PLTT_ID(bank), 32);
     // The defeated opponent's projectiles and both trail sprites must disappear
     // before borrowing their palette. Hiding only the bolt left stray trails.
     for(i=0;i<SHOTS_COUNT;i++)
@@ -186,7 +191,7 @@ bool8 RealtimeArena_TryEvolution(u8 party)
     {
         sArena.bodies[i].actionLife=sArena.bodies[i].shotTimer=0;
         ArenaMoveFx_Action(i,NULL,0,0,0,0,FALSE,TRUE);
-        ArenaMoveFx_Flame(i,MOVE_FLAMETHROWER,0,0,0,0,0,FALSE);
+        ArenaMoveFx_Flame(i,MOVE_FLAMETHROWER,0,0,0,0,0,FALSE,FALSE);
     }
     gArenaEvolutionTelemetry[0]++;
     gArenaEvolutionTelemetry[3]=oldSpecies;gArenaEvolutionTelemetry[4]=species;
