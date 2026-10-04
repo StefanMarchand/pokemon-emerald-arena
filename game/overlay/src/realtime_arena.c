@@ -153,11 +153,26 @@ static EWRAM_DATA u8 sFlameReach[2]={},sFlameElementMask[2]={};
 EWRAM_DATA u32 gArenaFlameTelemetry[5]={};
 static bool8 PsychicBusy(u8 side);
 static bool8 PsychicStart(u8 side,s32 targetX,s32 targetY);
+// Slot four is an arena-only fallback, never written into a native moveset.
+#define ARENA_STRUGGLE_SLOT MAX_MON_MOVES
+#define ARENA_NO_MOVE (MAX_MON_MOVES+1)
+static u16 ArenaMoveId(u8 side,u8 slot)
+{return slot==ARENA_STRUGGLE_SLOT?MOVE_STRUGGLE:slot<MAX_MON_MOVES?gBattleMons[side].moves[slot]:MOVE_NONE;}
+static bool8 NeedsStruggle(u8 side)
+{
+    u32 n;
+    for(n=0;n<MAX_MON_MOVES;n++)
+        if(gBattleMons[side].pp[n] && ArenaMoves_Get(gBattleMons[side].moves[n])
+            && gBattleMoves[gBattleMons[side].moves[n]].power)return FALSE;
+    return TRUE;
+}
+static u8 ArenaMovePP(u8 side,u8 slot)
+{return slot==ARENA_STRUGGLE_SLOT?NeedsStruggle(side):slot<MAX_MON_MOVES?gBattleMons[side].pp[slot]:0;}
 static bool8 BattleHasPsychic(void)
 {
     u32 side,slot;
     for(side=0;side<2;side++)for(slot=0;slot<MAX_MON_MOVES;slot++)
-        if(gBattleMons[side].moves[slot]==MOVE_PSYCHIC)return TRUE;
+        if(ArenaMoveId(side,slot)==MOVE_PSYCHIC)return TRUE;
     return FALSE;
 }
 static void PsychicReset(void);
@@ -220,6 +235,8 @@ static EWRAM_DATA bool8 sMoveMenuReady=FALSE;
 EWRAM_DATA u8 gArenaMenuRequest=0; // 1: native bag, 2: native party
 EWRAM_DATA u16 gArenaCompatibilityReason=ARENA_COMPAT_OK;
 static EWRAM_DATA u8 sPausePage=0;
+static EWRAM_DATA u8 sPauseChoice=0;
+static EWRAM_DATA u16 sBideDamage[2]={};
 static void ArenaExpFieldTick(void);
 
 static const struct BgTemplate sArenaBgs[] =
@@ -311,7 +328,8 @@ static const struct SpriteTemplate sAimTemplate =
 static const u8 sTextPaused[] = _("ARROWS: PICK MOVE   START: PLAY");
 static const u8 sTextPP[] = _(" PP ");
 static const u8 sMoveDirections[4][7] = {_("UP"),_("RIGHT"),_("DOWN"),_("LEFT")};
-static const u8 sMoveKinds[6][8] = {_("CLASSIC"),_("HIT"),_("DASH"),_("SHOT"),_("STATUS"),_("BOOST")};
+static const u8 sMoveKinds[6][8] = {_("CLASSIC"),_("HIT"),_("DASH"),_("SHOT"),_("CONE"),_("BOOST")};
+static const u8 sMoveStatusLabel[] = _("STATUS");
 #if ARENA_LAB
 static const u8 sDemoName[] = _("GERMAN");
 #else
@@ -431,7 +449,7 @@ EWRAM_DATA u8 gArenaRolloutStage = 0;
 static bool8 Rolling(u8 side)
 {
     const struct ArenaBody *body = &sArena.bodies[side];
-    return body->shotTimer && gBattleMons[side].moves[body->shotSlot] == MOVE_ROLLOUT;
+    return body->shotTimer && ArenaMoveId(side,body->shotSlot) == MOVE_ROLLOUT;
 }
 
 // A third of full speed at launch, full speed half a second in.
@@ -462,17 +480,18 @@ static u8 FirstMove(u8 side, bool8 needsPP)
     // Start on an attack when possible. Adding Growl/Screech must not change
     // a previously playable lead into an apparently harmless default action.
     for (i = 0; i < MAX_MON_MOVES; i++)
-        if (SupportedMove(gBattleMons[side].moves[i]) && gBattleMoves[gBattleMons[side].moves[i]].power
-            && (!needsPP || gBattleMons[side].pp[i])) return i;
+        if (SupportedMove(ArenaMoveId(side,i)) && gBattleMoves[ArenaMoveId(side,i)].power
+            && (!needsPP || ArenaMovePP(side,i))) return i;
     // Legal status-only sets (e.g. newly caught Ralts/Cascoon) remain usable.
     // Never hide an unsupported action such as Bide behind an adapted buff.
     for (i = 0; i < MAX_MON_MOVES; i++)
-        if (gBattleMons[side].moves[i] && !SupportedMove(gBattleMons[side].moves[i]))
-            return MAX_MON_MOVES;
+        if (ArenaMoveId(side,i) && !SupportedMove(ArenaMoveId(side,i)))
+            return ARENA_NO_MOVE;
+    if(needsPP && NeedsStruggle(side))return ARENA_STRUGGLE_SLOT;
     for (i = 0; i < MAX_MON_MOVES; i++)
-        if (SupportedMove(gBattleMons[side].moves[i])
-            && (!needsPP || gBattleMons[side].pp[i])) return i;
-    return MAX_MON_MOVES;
+        if (SupportedMove(ArenaMoveId(side,i))
+            && (!needsPP || ArenaMovePP(side,i))) return i;
+    return ARENA_NO_MOVE;
 }
 
 static bool8 SupportedBattler(u8 side)
@@ -494,7 +513,7 @@ static bool8 SupportedBattler(u8 side)
         || gStatuses3[side] || gBattleMons[side].hp == 0)
         return FALSE;
     gArenaCompatibilityReason=ARENA_COMPAT_MOVES|(side<<8);
-    if(FirstMove(side,TRUE)==MAX_MON_MOVES)return FALSE;
+    if(FirstMove(side,TRUE)==ARENA_NO_MOVE)return FALSE;
     gArenaCompatibilityReason=ARENA_COMPAT_ABILITY|(side<<8);
     switch (gBattleMons[side].ability)
     {
@@ -564,10 +583,10 @@ static bool8 SupportedBattler(u8 side)
         // Do not silently suppress a contact ability. These can enter only if
         // the opposing arena moves cannot trigger it; otherwise the complete
         // encounter stays in native classic mode, including its status rolls.
-        for (i = 0; i < MAX_MON_MOVES; i++)
-            if (SupportedMove(gBattleMons[side ^ 1].moves[i])
-                && gBattleMons[side ^ 1].pp[i]
-                && (gBattleMoves[gBattleMons[side ^ 1].moves[i]].flags & FLAG_MAKES_CONTACT))
+        for (i = 0; i <= MAX_MON_MOVES; i++)
+            if (SupportedMove(ArenaMoveId(side ^ 1,i))
+                && ArenaMovePP(side ^ 1,i)
+                && (gBattleMoves[ArenaMoveId(side ^ 1,i)].flags & FLAG_MAKES_CONTACT))
             {
                 gArenaCompatibilityReason=ARENA_COMPAT_CONTACT|(side<<8);
                 return FALSE;
@@ -751,7 +770,7 @@ static void DrawStage(void)
 static u8 RecoveryPips(void)
 {
     const struct ArenaBody *body=&sArena.bodies[0];
-    const struct ArenaMoveProfile *p=ArenaMoves_Get(gBattleMons[0].moves[body->shotSlot]);
+    const struct ArenaMoveProfile *p=ArenaMoves_Get(ArenaMoveId(0,body->shotSlot));
     if(body->shotTimer || body->actionLife)return 0;
     if(!body->cooldown)return 8;
     return 8-min(8,body->cooldown*8/max(1,p?p->recovery:30));
@@ -769,7 +788,22 @@ static void DrawHud(void)
     DrawStatusHud();
     if (sArena.paused)
     {
-        if(sPausePage)
+        if(sPausePage==3)
+        {
+            static const u8 labels[4][18]={_("POKEMON"),_("BAG"),_("MOVES"),_("RESUME")};
+            static const u8 title[]=_("PAUSED");
+            static const u8 help[]=_("UP/DOWN: CHOOSE   A: OPEN");
+            FillWindowPixelBuffer(1,PIXEL_FILL(9));
+            PrintPopup(8,3,title,5);
+            for(side=0;side<4;side++)
+            {
+                if(side==sPauseChoice)WindowRect(1,7,18+side*11,4,7,5);
+                PrintPopup(18,16+side*11,labels[side],side==sPauseChoice?5:4);
+            }
+            HudTinyWindow(1,7,67,help,7,52);
+            PutWindowTilemap(1);CopyWindowToVram(1,COPYWIN_FULL);
+        }
+        else if(sPausePage)
         {
             FillWindowPixelBuffer(1, PIXEL_FILL(9));
             PrintPopup(7,4,sPausePage==1?sQualityBag:sQualityParty,5);
@@ -787,14 +821,14 @@ static void DrawHud(void)
         PrintPopup(5, 3, sTextPaused, 7);
         for(side=0;side<MAX_MON_MOVES;side++)
         {
-            u16 move=gBattleMons[0].moves[side];
+            u16 move=ArenaMoveId(0,side);
             const struct ArenaMoveProfile *p=ArenaMoves_Get(move);
-            u8 pp=gBattleMons[0].pp[side];
+            u8 pp=ArenaMovePP(0,side);
             u8 color=!p?8:!pp?6:4;
             u8 y=17+side*12;
             PrintPopup(5,y,sMoveDirections[side],color);
             PrintPopup(43,y,gMoveNames[move],color);
-            PrintPopup(132,y,sMoveKinds[p?p->kind:0],color);
+            PrintPopup(132,y,p&&!gBattleMoves[move].power?sMoveStatusLabel:sMoveKinds[p?p->kind:0],color);
             end=StringCopy(text,sTextPP);
             ConvertIntToDecimalStringN(end,pp,STR_CONV_MODE_LEFT_ALIGN,2);
             PrintPopup(180,y,text,color);
@@ -805,7 +839,9 @@ static void DrawHud(void)
             WindowRect(1,0,19+side*12,3,8,side==sArena.bodies[0].moveSlot?5:9);
         PutWindowTilemap(1);
         CopyWindowToVram(1, COPYWIN_FULL);
-        HudTinyWindow(1,5,67,sQualityTabs,7,52);
+        if(NeedsStruggle(0))
+        {static const u8 help[]=_("A: STRUGGLE  B: MENU");HudTinyWindow(1,5,67,help,7,52);}
+        else HudTinyWindow(1,5,67,sQualityTabs,7,52);
         CopyWindowToVram(1,COPYWIN_GFX);
         }
     }
@@ -1074,9 +1110,9 @@ static void CB2_ArenaInit(void)
             body->dashCooldown=sArenaResident[i].dashCooldown;
             body->burnClock=sArenaResident[i].burnClock;
             body->statusActions=sArenaResident[i].statusActions;
-            if(sArenaResident[i].moveSlot<MAX_MON_MOVES
-                && SupportedMove(gBattleMons[i].moves[sArenaResident[i].moveSlot])
-                && gBattleMons[i].pp[sArenaResident[i].moveSlot])
+            if(sArenaResident[i].moveSlot<=MAX_MON_MOVES
+                && SupportedMove(ArenaMoveId(i,sArenaResident[i].moveSlot))
+                && ArenaMovePP(i,sArenaResident[i].moveSlot))
                 body->moveSlot=sArenaResident[i].moveSlot;
         }
         else if(sArenaResident[i].alive)
@@ -1200,6 +1236,28 @@ static void Move(u8 side, s32 dx, s32 dy, s32 speed)
     MoveDelta(side, dx * speed, dy * speed);
 }
 
+// Matheus: dash may cross cover or a rival only when its landing is clear.
+// Commit the landing immediately, then keep the existing ten-frame dodge and
+// recovery. This cannot strand the actor inside a prop on a menu/status handoff.
+static bool8 DashLanding(struct ArenaBody *body)
+{
+    s32 speed=Speed(0)*3,x,y;
+    if(body->dashX && body->dashY)speed=speed*181/256;
+    x=body->x+body->dashX*speed*10;
+    y=body->y+body->dashY*speed*10;
+    if(!ArenaNav_CanStand(x/Q,y/Q) || !CoverCanStep(x/Q,y/Q)
+        || (Abs(x-sArena.bodies[1].x)<22*Q && Abs(y-sArena.bodies[1].y)<22*Q))return FALSE;
+    // Only phase when the old sweep would hit something; open-ground dash
+    // retains its familiar continuous movement.
+    if(ArenaNav_LineClear(body->x/Q,body->y/Q,x/Q,y/Q,ARENA_BODY_RADIUS)
+        && ArenaMoves_SegmentHit(body->x/Q,body->y/Q,x/Q,y/Q,sArena.bodies[1].x/Q,sArena.bodies[1].y/Q,22)==FALSE)return FALSE;
+    ArenaFeedback_Dust(body->x/Q,body->y/Q,TRUE);
+    body->x=x;body->y=y;body->facing=Facing(body->dashX,body->dashY);
+    body->dashX=body->dashY=0;
+    ArenaFeedback_Dust(x/Q,y/Q,TRUE);
+    return TRUE;
+}
+
 static void Fire(u8 side, u8 slot, s32 targetX, s32 targetY)
 {
     struct ArenaBody *body = &sArena.bodies[side];
@@ -1209,8 +1267,8 @@ static void Fire(u8 side, u8 slot, s32 targetX, s32 targetY)
     u8 pp;
     // The selected move is captured at BeginShot. Changing L/R during its
     // animation changes the NEXT attack, never this attack's cost or power.
-    if (slot >= MAX_MON_MOVES || !gBattleMons[side].pp[slot]) return;
-    profile = ArenaMoves_Get(gBattleMons[side].moves[slot]);
+    if (slot > ARENA_STRUGGLE_SLOT || !ArenaMovePP(side,slot)) return;
+    profile = ArenaMoves_Get(ArenaMoveId(side,slot));
     if (!profile) return;
     dx = body->attackX; dy = body->attackY;
     len = max(Abs(dx), Abs(dy)) + min(Abs(dx), Abs(dy)) / 2;
@@ -1256,16 +1314,20 @@ static void Fire(u8 side, u8 slot, s32 targetX, s32 targetY)
         }
     }
     body->actionLife = profile->active;
+    if(profile->move==MOVE_BIDE)sBideDamage[side]=0;
     body->actionAge = 0; body->connected = FALSE; body->terrainMask=0;
     // Pressure applies on commitment, even if the projectile misses or hits
     // cover. Self-targeted buffs do not target the opponent. Clamp the last PP.
-    pp = gBattleMons[side].pp[slot];
+    pp = ArenaMovePP(side,slot);
     if (gBattleMons[side ^ 1].ability == ABILITY_PRESSURE
         && gBattleMoves[profile->move].target != MOVE_TARGET_USER && pp > 1)
         pp--;
-    gBattleMons[side].pp[slot] = --pp;
-    SetMonData(side ? &gEnemyParty[gBattlerPartyIndexes[side]] : &gPlayerParty[gBattlerPartyIndexes[side]],
-        MON_DATA_PP1 + slot, &pp);
+    if(slot<MAX_MON_MOVES)
+    {
+        gBattleMons[side].pp[slot] = --pp;
+        SetMonData(side ? &gEnemyParty[gBattlerPartyIndexes[side]] : &gPlayerParty[gBattlerPartyIndexes[side]],
+            MON_DATA_PP1 + slot, &pp);
+    }
     body->cooldown = profile->recovery + (side ? Clamp(8-gBattleMons[1].level/8,2,8) : 0);
     gRealtimeArenaTelemetry.shots[side]++;
     gArenaCombatTelemetry.lastMove[side] = profile->move;
@@ -1296,9 +1358,9 @@ static void Fire(u8 side, u8 slot, s32 targetX, s32 targetY)
 static void BeginShot(u8 side, s32 targetX, s32 targetY)
 {
     struct ArenaBody *body = &sArena.bodies[side];
-    const struct ArenaMoveProfile *profile = ArenaMoves_Get(gBattleMons[side].moves[body->moveSlot]);
+    const struct ArenaMoveProfile *profile = ArenaMoves_Get(ArenaMoveId(side,body->moveSlot));
     s32 dx,dy,len;
-    if (!profile || body->shotTimer || PsychicBusy(side) || SpecialBusy(side) || !gBattleMons[side].pp[body->moveSlot]
+    if (!profile || body->shotTimer || PsychicBusy(side) || SpecialBusy(side) || !ArenaMovePP(side,body->moveSlot)
         || (gBattleMons[side].status1&(STATUS1_SLEEP|STATUS1_FREEZE))) return;
     if((gBattleMons[side].status1&STATUS1_PARALYSIS) && Random()%4==0)
     {
@@ -1332,7 +1394,7 @@ static void TickPendingShots(void)
         if(gBattleMons[side].status1&(STATUS1_SLEEP|STATUS1_FREEZE))
         {body->shotTimer=body->actionLife=body->dash=0;continue;}
         if (!body->shotTimer) continue;
-        profile = ArenaMoves_Get(gBattleMons[side].moves[body->shotSlot]);
+        profile = ArenaMoves_Get(ArenaMoveId(side,body->shotSlot));
         // Presentation maps the profile's release to the source HitFrame.
         if (body->shotElapsed == profile->windup)
             Fire(side, body->shotSlot, body->aimX, body->aimY);
@@ -1361,10 +1423,10 @@ static void BufferPlayerActions(void)
     if (JOY_NEW(L_BUTTON | R_BUTTON) && JOY_HELD(L_BUTTON|R_BUTTON)!=(L_BUTTON|R_BUTTON))
     {
         u32 i;
-        for (i = 1; i <= MAX_MON_MOVES; i++)
+        for (i = 1; i <= MAX_MON_MOVES+1; i++)
         {
-            u8 slot = (body->moveSlot + (JOY_NEW(L_BUTTON) ? MAX_MON_MOVES - i : i)) % MAX_MON_MOVES;
-            if (SupportedMove(gBattleMons[0].moves[slot])) { body->moveSlot = slot; break; }
+            u8 slot = (body->moveSlot + (JOY_NEW(L_BUTTON) ? MAX_MON_MOVES+1 - i : i)) % (MAX_MON_MOVES+1);
+            if (SupportedMove(ArenaMoveId(0,slot)) && ArenaMovePP(0,slot)) { body->moveSlot = slot; break; }
         }
     }
 }
@@ -1382,8 +1444,9 @@ static void TickPlayer(void)
     {
         body->dash = 10; body->dashCooldown = 75;
         body->dashX = sArena.dashRequestX; body->dashY = sArena.dashRequestY;
+        DashLanding(body);
         sArena.dashBuffer = 0;
-        if (body->shotTimer && body->shotElapsed <= ArenaMoves_Get(gBattleMons[0].moves[body->shotSlot])->windup)
+        if (body->shotTimer && body->shotElapsed <= ArenaMoves_Get(ArenaMoveId(0,body->shotSlot))->windup)
             gArenaCombatTelemetry.cancelled[0]++;
         body->shotTimer = 0;
         gRealtimeArenaTelemetry.dodges++;
@@ -1404,7 +1467,7 @@ static void TickPlayer(void)
         // aim, including destructible cover. This is still the same four moves.
         body->manualAim=dx||dy;
         // Rollout goes where the body is pointing, not at the rival.
-        if(!dx&&!dy&&(gBattleMons[0].moves[body->moveSlot]==MOVE_ROLLOUT
+        if(!dx&&!dy&&(ArenaMoveId(0,body->moveSlot)==MOVE_ROLLOUT
             ||SmokeBlocks(body->x/Q,body->y/Q,sArena.bodies[1].x/Q,sArena.bodies[1].y/Q)))
         {
             static const s8 facing[8][2]={{0,1},{1,1},{1,0},{1,-1},{0,-1},{-1,-1},{-1,0},{-1,1}};
@@ -1447,7 +1510,7 @@ static void AiChooseGoal(void)
         {-256,0}, {-181,-181}, {0,-256}, {181,-181}
     };
     struct ArenaBody *body = &sArena.bodies[1];
-    const struct ArenaMoveProfile *p = ArenaMoves_Get(gBattleMons[1].moves[body->moveSlot]);
+    const struct ArenaMoveProfile *p = ArenaMoves_Get(ArenaMoveId(1,body->moveSlot));
     s32 preferred = p->kind == ARENA_MOVE_MELEE ? 24 : p->kind == ARENA_MOVE_RUSH ? p->range-22
         : p->move == MOVE_HYPER_BEAM ? 100
         : p->move == MOVE_FLAMETHROWER ? 76 : p->kind == ARENA_MOVE_CONE ? 40 : 70+sArena.style*8;
@@ -1562,25 +1625,25 @@ static void AiChooseMove(s32 distance)
     u32 i;
     s32 best=-100000;
     bool8 hasPhysical=FALSE,hasAttack=FALSE;
-    for(i=0;i<MAX_MON_MOVES;i++)
+    for(i=0;i<=MAX_MON_MOVES;i++)
     {
-        u16 move=gBattleMons[1].moves[i];
-        if(SupportedMove(move) && gBattleMons[1].pp[i] && gBattleMoves[move].power
+        u16 move=ArenaMoveId(1,i);
+        if(SupportedMove(move) && ArenaMovePP(1,i) && gBattleMoves[move].power
             && gBattleMoves[move].type<TYPE_MYSTERY && AiTypeValue(move))hasPhysical=TRUE;
-        if(SupportedMove(move) && gBattleMons[1].pp[i] && gBattleMoves[move].power)hasAttack=TRUE;
+        if(SupportedMove(move) && ArenaMovePP(1,i) && gBattleMoves[move].power)hasAttack=TRUE;
     }
-    for(i=0;i<MAX_MON_MOVES;i++)
+    for(i=0;i<=MAX_MON_MOVES;i++)
     {
-        u16 move=gBattleMons[1].moves[i];
+        u16 move=ArenaMoveId(1,i);
         const struct ArenaMoveProfile *p=ArenaMoves_Get(move);
         s32 score;
-        if(!p||!gBattleMons[1].pp[i])continue;
+        if(!p||!ArenaMovePP(1,i))continue;
         // Pure estimate from the native type chart. Never call TypeCalc here:
         // its damage globals belong to the actual hit transaction.
-        score=gBattleMoves[move].power*AiTypeValue(move)/50+AiRandom()%25;
+        score=gBattleMoves[move].power*(move==MOVE_STRUGGLE?100:AiTypeValue(move))/50+AiRandom()%25;
         if(move==MOVE_NIGHT_SHADE||move==MOVE_SEISMIC_TOSS)score=AiTypeValue(move)?gBattleMons[1].level*2:-1000;
         if(move==MOVE_ROLLOUT&&AiTypeValue(move))score+=45; // the roll's ramp is worth more than its listed power
-        else if(gBattleMoves[move].power && !AiTypeValue(move))score=-1000;
+        else if(move!=MOVE_STRUGGLE && gBattleMoves[move].power && !AiTypeValue(move))score=-1000;
         if((move==MOVE_ABSORB||move==MOVE_MEGA_DRAIN||move==MOVE_GIGA_DRAIN||move==MOVE_LEECH_LIFE) && AiTypeValue(move)
             && gBattleMons[1].hp*2<gBattleMons[1].maxHP)score+=90;
         if(!gBattleMoves[move].power)
@@ -1603,7 +1666,7 @@ static void AiChooseMove(s32 distance)
             score=useful?85+AiRandom()%25:-1000;
         }
         if(p->kind!=ARENA_MOVE_SELF && distance>p->range)score-=(distance-p->range)*2;
-        if(gBattleMons[1].pp[i]<=2)score-=12;
+        if(ArenaMovePP(1,i)<=2)score-=12;
         if(score>best){best=score;sArena.bodies[1].moveSlot=i;}
     }
 }
@@ -1648,15 +1711,15 @@ static void TickEnemy(void)
         if(!body->cooldown)AiChooseMove(distance);
         if (!AiTryEvade())
         {
-            const struct ArenaMoveProfile *p=ArenaMoves_Get(gBattleMons[1].moves[body->moveSlot]);
-            if(p->kind==ARENA_MOVE_SELF && !body->cooldown && gBattleMons[1].pp[body->moveSlot])
+            const struct ArenaMoveProfile *p=ArenaMoves_Get(ArenaMoveId(1,body->moveSlot));
+            if(p->kind==ARENA_MOVE_SELF && !body->cooldown && ArenaMovePP(1,body->moveSlot))
             {
                 if(p->move==MOVE_SUBSTITUTE||p->move==MOVE_SMOKESCREEN)
                     BeginShot(1,sArena.observed.x*Q,sArena.observed.y*Q);
                 else BeginShot(1,body->x,body->y-Q);
                 sArena.aiState=AI_RECOVER;return;
             }
-            if (!body->cooldown && gBattleMons[1].pp[body->moveSlot]
+            if (!body->cooldown && ArenaMovePP(1,body->moveSlot)
                 && distance < p->range && distance > 8
                 && ArenaNav_LineClear(body->x/Q,body->y/Q,sArena.observed.x,sArena.observed.y,2))
             {
@@ -1725,6 +1788,7 @@ static void ApplyMoveHit(u8 side,u16 move)
         return;
     }
     damage=RealtimeArena_ResolveDamage(side,targetSide,move);
+    if(move==MOVE_BIDE && damage>0)damage=min(65535,sBideDamage[side]*2);
     ApplyResolvedHit(side,move,damage);
 }
 
@@ -1737,6 +1801,8 @@ static void ApplyResolvedHit(u8 side,u16 move,s32 damage)
     {
         u16 hp=gBattleMons[targetSide].hp;
         u16 dealt=min(damage,hp);
+        if(target->actionLife && ArenaMoveId(targetSide,target->shotSlot)==MOVE_BIDE)
+            sBideDamage[targetSide]=min(32767,sBideDamage[targetSide]+dealt);
         ArenaFeedback_Impact(targetSide,target->x/Q,target->y/Q,dealt,ARENA_FEEDBACK_DAMAGE);
         sArena.hitstop=damage>=8?3:2;
         hp-=dealt;
@@ -1795,7 +1861,7 @@ static void ApplyResolvedHit(u8 side,u16 move,s32 damage)
                 gArenaAdventureTelemetry[1]++;
                 // A committed hit is not refunded. Cancel only the pending
                 // action and add recovery; already emitted projectiles live on.
-                if(target->shotTimer && target->shotElapsed<=ArenaMoves_Get(gBattleMons[targetSide].moves[target->shotSlot])->windup)
+                if(target->shotTimer && target->shotElapsed<=ArenaMoves_Get(ArenaMoveId(targetSide,target->shotSlot))->windup)
                     gArenaCombatTelemetry.cancelled[targetSide]++;
                 target->shotTimer=0;target->actionLife=0;
                 target->cooldown=max(target->cooldown,18);
@@ -1870,7 +1936,21 @@ static void TickActions(void)
         s16 oldX=body->x/Q,oldY=body->y/Q;
         bool8 hit=FALSE;
         if(!body->actionLife)continue;
-        p=ArenaMoves_Get(gBattleMons[side].moves[body->shotSlot]);
+        p=ArenaMoves_Get(ArenaMoveId(side,body->shotSlot));
+        if(p->move==MOVE_BIDE)
+        {
+            body->actionAge++;
+            if(!(body->actionAge%24))ArenaFeedback_Dust(oldX,oldY,TRUE);
+            if(!--body->actionLife)
+            {
+                if(sBideDamage[side] && !target->dash
+                    && ArenaNav_Distance(oldX,oldY,target->x/Q,target->y/Q)<=p->range
+                    && ArenaNav_LineClear(oldX,oldY,target->x/Q,target->y/Q,2))
+                    ApplyMoveHit(side,MOVE_BIDE);
+                else ArenaFeedback_Impact(side,oldX,oldY,0,ARENA_FEEDBACK_MISS);
+            }
+            continue;
+        }
         if(p->move==MOVE_DIG||p->move==MOVE_FLY)
         {
             if(!body->connected){body->connected=TRUE;DiveStart(side,p->move);}
@@ -2222,6 +2302,7 @@ static void CB2_Arena(void)
     if (JOY_NEW(START_BUTTON) && !sArena.resultTimer && sCapture.state==ARENA_CAPTURE_IDLE)
     {
         sArena.paused ^= TRUE;
+        if(sArena.paused){sPausePage=3;sPauseChoice=0;}
         DrawStage();
         sArena.hudDirty = TRUE;
     }
@@ -2230,20 +2311,34 @@ static void CB2_Arena(void)
     {
         u16 keys=gMain.newKeys&DPAD_ANY;
         u8 slot=keys==DPAD_UP?0:keys==DPAD_RIGHT?1:keys==DPAD_DOWN?2:keys==DPAD_LEFT?3:MAX_MON_MOVES;
-        if(JOY_NEW(L_BUTTON|R_BUTTON))
+        if(sPausePage==3)
+        {
+            if(JOY_NEW(DPAD_UP|DPAD_DOWN))
+            {sPauseChoice=(sPauseChoice+(JOY_NEW(DPAD_DOWN)?1:3))%4;sArena.hudDirty=TRUE;}
+            if(JOY_NEW(A_BUTTON))
+            {
+                if(sPauseChoice<2 && !ClashBusy() && !GuardBusy() && !SpecialBusy(0) && !SpecialBusy(1))
+                {gArenaMenuRequest=sPauseChoice==0?2:1;ArenaExit(FALSE);return;}
+                if(sPauseChoice==2){sPausePage=0;sMoveMenuReady=FALSE;sArena.hudDirty=TRUE;}
+                if(sPauseChoice==3){sArena.paused=FALSE;DrawStage();sArena.hudDirty=TRUE;}
+            }
+        }
+        else if(JOY_NEW(L_BUTTON|R_BUTTON))
         {
             sPausePage=(sPausePage+(JOY_NEW(R_BUTTON)?1:2))%3;
             sMoveMenuReady=FALSE;sArena.hudDirty=TRUE;
         }
         if(JOY_NEW(B_BUTTON))
-        {sArena.paused=FALSE;DrawStage();sArena.hudDirty=TRUE;}
-        if(sPausePage && JOY_NEW(A_BUTTON) && !ClashBusy() && !GuardBusy() && !SpecialBusy(0) && !SpecialBusy(1))
+        {if(sPausePage==3)sArena.paused=FALSE;else sPausePage=3;DrawStage();sArena.hudDirty=TRUE;}
+        if(sPausePage>0 && sPausePage<3 && JOY_NEW(A_BUTTON) && !ClashBusy() && !GuardBusy() && !SpecialBusy(0) && !SpecialBusy(1))
         {gArenaMenuRequest=sPausePage;ArenaExit(FALSE);return;}
-        if(!sPausePage && slot<MAX_MON_MOVES && SupportedMove(gBattleMons[0].moves[slot]))
+        if(!sPausePage && slot<MAX_MON_MOVES && SupportedMove(ArenaMoveId(0,slot)))
         {
             sArena.bodies[0].moveSlot=slot;
             sArena.hudDirty=TRUE;
         }
+        if(!sPausePage && JOY_NEW(A_BUTTON) && NeedsStruggle(0))
+        {sArena.bodies[0].moveSlot=ARENA_STRUGGLE_SLOT;sArena.hudDirty=TRUE;}
         // Menu input never queues an attack or dodge for the resumed battle.
         sArena.attackBuffer=sArena.dashBuffer=0;
     }
@@ -2257,13 +2352,17 @@ static void CB2_Arena(void)
             && !PsychicBusy(0) && !PsychicBusy(1)
             && !sArena.bodies[0].shotTimer && !sArena.bodies[1].shotTimer
             && !sArena.bodies[0].actionLife && !sArena.bodies[1].actionLife
-            && (FirstMove(0,TRUE)==MAX_MON_MOVES || FirstMove(1,TRUE)==MAX_MON_MOVES))
+            && (FirstMove(0,TRUE)==ARENA_NO_MOVE || FirstMove(1,TRUE)==ARENA_NO_MOVE))
         {
             bool8 flying=FALSE;
             for(i=0;i<SHOTS_COUNT;i++)if(sArena.shots[i].life)flying=TRUE;
             if(!flying){ArenaExit(FALSE);return;}
         }
         sArena.frame++;
+        for(i=0;i<2;i++)
+            if(!sArena.bodies[i].shotTimer && !sArena.bodies[i].actionLife
+                && !ArenaMovePP(i,sArena.bodies[i].moveSlot))
+                sArena.bodies[i].moveSlot=FirstMove(i,TRUE);
         gRealtimeArenaTelemetry.frames++;
         if (sArena.resultTimer)
         {
@@ -2362,7 +2461,7 @@ static void CB2_Arena(void)
     for (i = 0; i < 2; i++)
     {
         struct ArenaBody *body = &sArena.bodies[i];
-        const struct ArenaMoveProfile *profile=ArenaMoves_Get(gBattleMons[i].moves[body->shotTimer?body->shotSlot:body->moveSlot]);
+        const struct ArenaMoveProfile *profile=ArenaMoves_Get(ArenaMoveId(i,body->shotTimer?body->shotSlot:body->moveSlot));
         struct Sprite *sprite = &gSprites[body->sprite];
         sprite->x = body->x / Q;
         sprite->y = body->y / Q;
@@ -2509,7 +2608,7 @@ static void CB2_Arena(void)
         for(i=0;i<2;i++)
         {
             struct ArenaBody *b=&sArena.bodies[i];
-            if(b->actionLife&&gBattleMons[i].moves[b->shotSlot]==MOVE_FLAMETHROWER)
+            if(b->actionLife&&ArenaMoveId(i,b->shotSlot)==MOVE_FLAMETHROWER)
                 warmth=max(warmth,b->actionAge<8?4:b->actionLife<10?1:2);
         }
         // Brief warm light on the scenery only, never the HUD or HP palettes.

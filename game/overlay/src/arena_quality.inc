@@ -7,6 +7,12 @@ static const u8 sQualityConfirm[] = _("A: OPEN   B: BACK TO BATTLE");
 static const u8 sQualityTabs[] = _("L/R: MOVES  BAG  POKEMON");
 static const u8 sQualityExp[] = _(" EXP");
 static EWRAM_DATA u32 sFieldExp[PARTY_SIZE]={};
+static EWRAM_DATA u8 sFieldLevel[PARTY_SIZE]={};
+static EWRAM_DATA u8 sFieldCaughtName[POKEMON_NAME_LENGTH+1]={};
+static EWRAM_DATA u8 sFieldCaught=0;
+static const u8 sQualityLevelUp[] = _("LEVEL UP! LVL ");
+static const u8 sQualityCaughtParty[] = _("CAUGHT / PARTY");
+static const u8 sQualityCaughtPC[] = _("CAUGHT / PC");
 EWRAM_DATA u32 gArenaQualityTelemetry[4]={}; // queued XP, shown XP, toasts, caught
 #define EXP_TAG 0xA7C0
 static const struct OamData sExpOam={.shape=SPRITE_SHAPE(64x32),.size=SPRITE_SIZE(64x32),.priority=0};
@@ -29,6 +35,14 @@ void RealtimeArena_QueueExp(u8 party,u32 amount)
     if(party>=PARTY_SIZE || !amount)return;
     sFieldExp[party]+=amount;
     gArenaQualityTelemetry[0]+=amount;
+}
+void RealtimeArena_QueueLevel(u8 party,u8 level)
+{if(party<PARTY_SIZE)sFieldLevel[party]=level;}
+static void QueueCaught(struct Pokemon *mon,u8 destination)
+{
+    GetMonData(mon,MON_DATA_NICKNAME,sFieldCaughtName);
+    sFieldCaughtName[POKEMON_NAME_LENGTH]=EOS;
+    sFieldCaught=destination==MON_GIVEN_TO_PARTY?1:2;
 }
 static void ExpPixel(u32 *tiles,u32 x,u32 y,u8 color)
 {
@@ -56,16 +70,29 @@ static void ArenaExpFieldTick(void)
     struct SpritePalette pal={palette,EXP_TAG};
     if(gPaletteFade.active || ArePlayerFieldControlsLocked() || ScriptContext_IsEnabled()
         || GetSpriteTileStartByTag(EXP_TAG)!=0xFFFF)return;
-    for(i=0;i<PARTY_SIZE;i++)if(sFieldExp[i])break;
-    if(i==PARTY_SIZE)return;
+    for(i=0;i<PARTY_SIZE;i++)if(sFieldExp[i]||sFieldLevel[i])break;
+    if(i==PARTY_SIZE && !sFieldCaught)return;
     tiles=AllocZeroed(2048);
     if(!tiles)return;
-    for(y=1;y<19;y++)for(x=1;x<127;x++)ExpPixel(tiles,x,y,1);
-    for(x=3;x<125;x++)ExpPixel(tiles,x,18,3);
-    GetMonData(&gPlayerParty[i],MON_DATA_NICKNAME,text);text[10]=EOS;
-    ExpText(tiles,6,4,text);
-    text[0]=CHAR_PLUS;end=ConvertIntToDecimalStringN(text+1,sFieldExp[i],STR_CONV_MODE_LEFT_ALIGN,6);
-    StringCopy(end,sQualityExp);ExpText(tiles,6,11,text);
+    for(y=1;y<28;y++)for(x=1;x<127;x++)ExpPixel(tiles,x,y,1);
+    for(x=3;x<125;x++)ExpPixel(tiles,x,27,3);
+    if(i<PARTY_SIZE)
+    {
+        GetMonData(&gPlayerParty[i],MON_DATA_NICKNAME,text);text[10]=EOS;
+        ExpText(tiles,6,4,text);
+        text[0]=CHAR_PLUS;end=ConvertIntToDecimalStringN(text+1,sFieldExp[i],STR_CONV_MODE_LEFT_ALIGN,6);
+        StringCopy(end,sQualityExp);ExpText(tiles,6,11,text);
+        if(sFieldLevel[i])
+        {
+            ConvertIntToDecimalStringN(StringCopy(text,sQualityLevelUp),sFieldLevel[i],STR_CONV_MODE_LEFT_ALIGN,3);
+            ExpText(tiles,6,19,text);
+        }
+    }
+    else
+    {
+        ExpText(tiles,6,4,sFieldCaughtName);
+        ExpText(tiles,6,13,sFieldCaught==1?sQualityCaughtParty:sQualityCaughtPC);
+    }
     if(LoadSpritePalette(&pal)==0xFF){Free(tiles);return;}
     for(x=0;x<2;x++)
     {
@@ -82,6 +109,12 @@ static void ArenaExpFieldTick(void)
         if(x){DestroySprite(&gSprites[ids[0]]);FreeSpriteTilesByTag(EXP_TAG);}
         FreeSpritePaletteByTag(EXP_TAG);return;
     }
-    gArenaQualityTelemetry[1]+=sFieldExp[i];gArenaQualityTelemetry[2]++;
-    sFieldExp[i]=0;
+    if(i<PARTY_SIZE)
+    {
+        if(sFieldLevel[i])PlayFanfare(MUS_LEVEL_UP);
+        gArenaQualityTelemetry[1]+=sFieldExp[i];
+        sFieldExp[i]=0;sFieldLevel[i]=0;
+    }
+    else sFieldCaught=0;
+    gArenaQualityTelemetry[2]++;
 }

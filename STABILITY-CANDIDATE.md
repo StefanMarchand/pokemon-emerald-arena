@@ -1,4 +1,7 @@
-# 0.12.1-rc1 — not yet promoted
+# Historical 0.12.1-rc1 candidate
+
+Superseded by the integrated [0.13.0 feedback release](release-0.13.0.md).
+The notes and hashes below describe the earlier candidate, not the current build.
 
 Integrated stability follow-up on 0.12.0. No public release or announcement has
 been made for this candidate. The README download still points to stable 0.12.0.

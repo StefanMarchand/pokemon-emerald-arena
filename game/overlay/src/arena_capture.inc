@@ -46,8 +46,8 @@ static void CaptureHud(void)
     bool8 visible=!sArena.paused;
     bool8 notice=sCapture.notice!=0;
     u16 stock=CountTotalItemQuantityInBag(ITEM_POKE_BALL);
-    u16 move=gBattleMons[0].moves[sArena.bodies[0].moveSlot];
-    u8 pp=gBattleMons[0].pp[sArena.bodies[0].moveSlot];
+    u16 move=ArenaMoveId(0,sArena.bodies[0].moveSlot);
+    u8 pp=ArenaMovePP(0,sArena.bodies[0].moveSlot);
     if(sCapture.hudReady && sCapture.hudVisible==visible && sCapture.hudNotice==notice
         && sCapture.hudMessage==sCapture.message && sCapture.hudStock==stock
         && sCapture.hudMove==move && sCapture.hudPP==pp)return;
@@ -68,8 +68,10 @@ static void CaptureHud(void)
         }
         else
         {
-            HudTinyWindow(2,9,10,gMoveNames[gBattleMons[0].moves[sArena.bodies[0].moveSlot]],4,16);
-            ConvertIntToDecimalStringN(StringCopy(text,sHudPPLabel),gBattleMons[0].pp[sArena.bodies[0].moveSlot],STR_CONV_MODE_LEFT_ALIGN,2);
+            HudTinyWindow(2,9,10,gMoveNames[ArenaMoveId(0,sArena.bodies[0].moveSlot)],4,16);
+            if(sArena.bodies[0].moveSlot==ARENA_STRUGGLE_SLOT)
+            {static const u8 unlimited[]=_("PP --");StringCopy(text,unlimited);}
+            else ConvertIntToDecimalStringN(StringCopy(text,sHudPPLabel),ArenaMovePP(0,sArena.bodies[0].moveSlot),STR_CONV_MODE_LEFT_ALIGN,2);
             HudTinyWindow(2,81,10,text,4,5);
         }
         PutWindowTilemap(2);
@@ -245,7 +247,8 @@ static bool8 CaptureAward(void)
         HandleSetPokedexFlag(SpeciesToNationalPokedexNum(gBattleMons[1].species),FLAG_SET_CAUGHT,gBattleMons[1].personality);
     IncrementGameStat(GAME_STAT_POKEMON_CAPTURES);
     gArenaCaptureTelemetry.caught++;
-    CaptureMessage(result==MON_GIVEN_TO_PARTY?4:5,1);
+    QueueCaught(mon,result);
+    sCapture.notice=0;sArena.hudDirty=TRUE;
     return TRUE;
 }
 

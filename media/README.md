@@ -1,5 +1,23 @@
 # Real gameplay
 
+## Community feedback · 0.13.0
+
+[Watch / download with sound](emerald-arena-feedback.mp4)
+
+56 seconds: original Route 102 trainer approach and consecutive opponents,
+explicit START menu, Potion, move details, switching, clear-landing dash,
+Magikarp's temporary Struggle, earned level-up and post-capture notification.
+
+Six actual mGBA input replays on the integrated build, each checked against its
+final native party/battler/arena/physics state. Teams and encounters were prepared
+for filming; HP, PP, damage, XP, healing and catches were not forced. Dialogue,
+menu transitions and repeated capture attempts are shortened. Different battles
+are edited together at normal speed. Music is mixed with game audio; the native
+level-up fanfare is retained. No artificial combat graphics or final CTA card.
+
+Lab SHA-256: `11d343040e5d30221e9a3f78de5a3b3de954d7f5871b7d04403acfbcd83b2581`.
+This is a curated feature demo, not proof of a full-story run or hardware FPS.
+
 ## 150 Pokémon · 0.10.2
 
 [Watch / download with sound](emerald-arena-150.mp4)

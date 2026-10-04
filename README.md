@@ -2,7 +2,7 @@
 
 Pokémon Emerald with real time battles. Inside the original GBA game.
 
-[**Download Emerald Arena**](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.12.0/Emerald-Arena-0.12.0.zip) · [Installation guide](PLAY.md)
+[**Download Emerald Arena**](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.13.0/Emerald-Arena-0.13.0.zip) · [Installation guide](PLAY.md)
 
 [**Project website**](https://burgar.dev/emerald) · [How I’m building it with the community](https://burgar.dev/notes/emerald.html)
 
@@ -12,16 +12,17 @@ Pokémon Emerald with real time battles. Inside the original GBA game.
 
 ## Watch gameplay
 
-[![Community stability improvements](media/emerald-arena-stability.jpg)](https://github.com/GBurgardt/pokemon-emerald-arena/raw/refs/heads/main/media/emerald-arena-stability.mp4)
+[![Community feedback improvements](media/emerald-arena-feedback.jpg)](https://github.com/GBurgardt/pokemon-emerald-arena/raw/refs/heads/main/media/emerald-arena-feedback.mp4)
 
-[New improvements · 47 seconds with sound](media/emerald-arena-stability.mp4) · [Full gameplay · 2:26 with sound](https://github.com/GBurgardt/pokemon-emerald-arena/raw/refs/heads/main/media/emerald-arena-full-gameplay.mp4)
+[New improvements · 56 seconds with sound](media/emerald-arena-feedback.mp4) · [Full gameplay · 2:26 with sound](https://github.com/GBurgardt/pokemon-emerald-arena/raw/refs/heads/main/media/emerald-arena-full-gameplay.mp4)
 
 [Playing on an AYN Thor · 16 seconds](https://github.com/GBurgardt/pokemon-emerald-arena/raw/refs/heads/main/media/emerald-arena-ayn-thor.mp4)
 
-New in 0.12.0: safer trainer handoffs and switching, poison/paralysis support,
-contact abilities, status-only teams, four more move profiles and ten more story
-sprite sets. Also includes the previously previewed flame clashes and ghost evolution art.
-162 animated Pokémon. Unsupported encounters still use classic battles.
+New in 0.13.0: an explicit START menu for Pokémon, Bag and Moves; in-arena Struggle;
+Splash/Bide trainer compatibility; landing-aware dodge; level-up sounds and walking
+XP/capture notifications. Also includes persistent battle effects, more status
+support and 25 additional PMD sprite sets. Thanks to @MatheusLynar for playtesting.
+187 animated Pokémon. Unsupported encounters still use classic battles.
 This is a stability update, not certification of the full story or every emulator.
 
 Dig, Fly, Teleport, Seismic Toss, Double Team and elemental terrain are still included. [Watch the four new moves · 46 seconds](media/emerald-arena-four-moves.mp4).
@@ -52,7 +53,7 @@ Supported wild and single trainer battles use the arena automatically. Double, l
 
 ## Controls
 
-Direction buttons to move. **A** to attack. **B + a direction** to dodge. **START** to pause; **L/R** selects moves, bag or party while paused. **SELECT** opens the party.
+Direction buttons to move. **A** to attack. **B + a direction** to dodge. **L/R** to select attacks. **START** opens Pokémon / Bag / Moves / Resume; choose with up/down and A. **SELECT** opens the party.
 Hold **L + R** to aim a Poké Ball; release to throw, **B** to cancel.
 [All controls](PLAY.md#controls).
 

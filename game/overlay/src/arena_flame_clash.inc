@@ -12,8 +12,8 @@ static void ClashDetect(void)
     s16 dx=(b->x-a->x)/Q,dy=(b->y-a->y)/Q;
     u32 i;u16 distance=ArenaNav_Distance(a->x/Q,a->y/Q,b->x/Q,b->y/Q);
     if(!ArenaMoveFx_ClashReady()||sFlameClash.active||!a->actionLife||!b->actionLife||a->connected||b->connected
-       ||gBattleMons[0].moves[a->shotSlot]!=MOVE_FLAMETHROWER
-       ||gBattleMons[1].moves[b->shotSlot]!=MOVE_FLAMETHROWER
+       ||ArenaMoveId(0,a->shotSlot)!=MOVE_FLAMETHROWER
+       ||ArenaMoveId(1,b->shotSlot)!=MOVE_FLAMETHROWER
        ||distance<40||distance>180||SpecialBusy(0)||SpecialBusy(1)
        ||a->attackX*b->attackX+a->attackY*b->attackY>-50000)return;
     if(dx*a->attackX+dy*a->attackY<=0

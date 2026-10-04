@@ -22,6 +22,7 @@ bool8 RealtimeArena_SetupDemo(void);
 void RealtimeArena_DemoFieldCallback(void);
 void RealtimeArena_PracticeTick(void);
 void RealtimeArena_QueueExp(u8 party, u32 amount);
+void RealtimeArena_QueueLevel(u8 party, u8 level);
 extern u8 gArenaMenuRequest;
 // Read-only compatibility diagnosis: low byte reason, high byte battler side.
 enum { ARENA_COMPAT_OK, ARENA_COMPAT_ITEM, ARENA_COMPAT_STATUS,

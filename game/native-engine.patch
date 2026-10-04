@@ -491,7 +491,7 @@ index 11fc168..a04c74c 100644
      {
          RandomlyGivePartyPokerus(gPlayerParty);
 diff --git a/src/battle_script_commands.c b/src/battle_script_commands.c
-index 3af09ec..4e8373e 100644
+index 3af09ec..dc9ac44 100644
 --- a/src/battle_script_commands.c
 +++ b/src/battle_script_commands.c
 @@ -1,5 +1,8 @@
@@ -885,7 +885,16 @@ index 3af09ec..4e8373e 100644
                      MonGainEVs(&gPlayerParty[gBattleStruct->expGetterMonId], gBattleMons[gBattlerFainted].species);
                  }
                  gBattleStruct->sentInPokes >>= 1;
-@@ -3503,6 +3818,12 @@ static void Cmd_getexp(void)
+@@ -3450,6 +3765,8 @@ static void Cmd_getexp(void)
+             gActiveBattler = gBattleStruct->expGetterBattlerId;
+             if (gBattleBufferB[gActiveBattler][0] == CONTROLLER_TWORETURNVALUES && gBattleBufferB[gActiveBattler][1] == RET_VALUE_LEVELED_UP)
+             {
++                if(gRealtimeArenaQuietResult)
++                    RealtimeArena_QueueLevel(gBattleStruct->expGetterMonId,GetMonData(&gPlayerParty[gBattleStruct->expGetterMonId],MON_DATA_LEVEL));
+                 if (gBattleTypeFlags & BATTLE_TYPE_TRAINER && gBattlerPartyIndexes[gActiveBattler] == gBattleStruct->expGetterMonId)
+                     HandleLowHpMusicChange(&gPlayerParty[gBattlerPartyIndexes[gActiveBattler]], gActiveBattler);
+ 
+@@ -3503,6 +3820,12 @@ static void Cmd_getexp(void)
          }
          break;
      case 5: // looper increment
@@ -898,7 +907,7 @@ index 3af09ec..4e8373e 100644
          if (gBattleMoveDamage) // there is exp to give, goto case 3 that gives exp
          {
              gBattleScripting.getexpState = 3;
-@@ -3913,6 +4234,7 @@ static void Cmd_bicword(void)
+@@ -3913,6 +4236,7 @@ static void Cmd_bicword(void)
  
  static void Cmd_pause(void)
  {
@@ -906,7 +915,7 @@ index 3af09ec..4e8373e 100644
      if (gBattleControllerExecFlags == 0)
      {
          u16 value = T2_READ_16(gBattlescriptCurrInstr + 1);
-@@ -4004,6 +4326,7 @@ static void Cmd_endselectionscript(void)
+@@ -4004,6 +4328,7 @@ static void Cmd_endselectionscript(void)
  static void Cmd_playanimation(void)
  {
      const u16 *argumentPtr;
@@ -914,7 +923,7 @@ index 3af09ec..4e8373e 100644
  
      gActiveBattler = GetBattlerForBattleScript(gBattlescriptCurrInstr[1]);
      argumentPtr = T2_READ_PTR(gBattlescriptCurrInstr + 3);
-@@ -4047,6 +4370,7 @@ static void Cmd_playanimation_var(void)
+@@ -4047,6 +4372,7 @@ static void Cmd_playanimation_var(void)
  {
      const u16 *argumentPtr;
      const u8 *animationIdPtr;
@@ -922,7 +931,7 @@ index 3af09ec..4e8373e 100644
  
      gActiveBattler = GetBattlerForBattleScript(gBattlescriptCurrInstr[1]);
      animationIdPtr = T2_READ_PTR(gBattlescriptCurrInstr + 2);
-@@ -4114,6 +4438,7 @@ static void Cmd_playstatchangeanimation(void)
+@@ -4114,6 +4440,7 @@ static void Cmd_playstatchangeanimation(void)
      u16 statAnimId = 0;
      s32 changeableStatsCount = 0;
      u8 statsToCheck = 0;
@@ -930,7 +939,7 @@ index 3af09ec..4e8373e 100644
  
      gActiveBattler = GetBattlerForBattleScript(gBattlescriptCurrInstr[1]);
      statsToCheck = gBattlescriptCurrInstr[2];
-@@ -4594,6 +4919,7 @@ static void Cmd_typecalc2(void)
+@@ -4594,6 +4921,7 @@ static void Cmd_typecalc2(void)
  
  static void Cmd_returnatktoball(void)
  {
@@ -938,7 +947,7 @@ index 3af09ec..4e8373e 100644
      gActiveBattler = gBattlerAttacker;
      if (!(gHitMarker & HITMARKER_FAINTED(gActiveBattler)))
      {
-@@ -4688,6 +5014,13 @@ static void Cmd_switchinanim(void)
+@@ -4688,6 +5016,13 @@ static void Cmd_switchinanim(void)
  
      gAbsentBattlerFlags &= ~(gBitTable[gActiveBattler]);
  
@@ -952,7 +961,7 @@ index 3af09ec..4e8373e 100644
      BtlController_EmitSwitchInAnim(B_COMM_TO_CONTROLLER, gBattlerPartyIndexes[gActiveBattler], gBattlescriptCurrInstr[2]);
      MarkBattlerForControllerExec(gActiveBattler);
  
-@@ -5318,6 +5651,7 @@ static void Cmd_playse(void)
+@@ -5318,6 +5653,7 @@ static void Cmd_playse(void)
  
  static void Cmd_fanfare(void)
  {
@@ -960,7 +969,7 @@ index 3af09ec..4e8373e 100644
      gActiveBattler = gBattlerAttacker;
      BtlController_EmitPlayFanfareOrBGM(B_COMM_TO_CONTROLLER, T2_READ_16(gBattlescriptCurrInstr + 1), FALSE);
      MarkBattlerForControllerExec(gActiveBattler);
-@@ -5327,6 +5661,7 @@ static void Cmd_fanfare(void)
+@@ -5327,6 +5663,7 @@ static void Cmd_fanfare(void)
  
  static void Cmd_playfaintcry(void)
  {
@@ -968,7 +977,7 @@ index 3af09ec..4e8373e 100644
      gActiveBattler = GetBattlerForBattleScript(gBattlescriptCurrInstr[1]);
      BtlController_EmitFaintingCry(B_COMM_TO_CONTROLLER);
      MarkBattlerForControllerExec(gActiveBattler);
-@@ -5700,6 +6035,8 @@ static void Cmd_drawpartystatussummary(void)
+@@ -5700,6 +6037,8 @@ static void Cmd_drawpartystatussummary(void)
      struct Pokemon *party;
      struct HpAndStatus hpStatuses[PARTY_SIZE];
  
@@ -977,7 +986,7 @@ index 3af09ec..4e8373e 100644
      if (gBattleControllerExecFlags)
          return;
  
-@@ -5733,6 +6070,7 @@ static void Cmd_drawpartystatussummary(void)
+@@ -5733,6 +6072,7 @@ static void Cmd_drawpartystatussummary(void)
  
  static void Cmd_hidepartystatussummary(void)
  {
@@ -985,7 +994,7 @@ index 3af09ec..4e8373e 100644
      gActiveBattler = GetBattlerForBattleScript(gBattlescriptCurrInstr[1]);
      BtlController_EmitHidePartyStatusSummary(B_COMM_TO_CONTROLLER);
      MarkBattlerForControllerExec(gActiveBattler);
-@@ -5923,6 +6261,7 @@ static void Cmd_atknameinbuff1(void)
+@@ -5923,6 +6263,7 @@ static void Cmd_atknameinbuff1(void)
  
  static void Cmd_drawlvlupbox(void)
  {
@@ -993,7 +1002,7 @@ index 3af09ec..4e8373e 100644
      if (gBattleScripting.drawlvlupboxState == 0)
      {
          // If the Pokémon getting exp is not in-battle then
-@@ -9902,10 +10241,59 @@ static void Cmd_removelightscreenreflect(void)
+@@ -9902,10 +10243,59 @@ static void Cmd_removelightscreenreflect(void)
      gBattlescriptCurrInstr++;
  }
  
@@ -1055,7 +1064,7 @@ index 3af09ec..4e8373e 100644
      if (gBattleControllerExecFlags)
          return;
  
-@@ -9926,72 +10314,7 @@ static void Cmd_handleballthrow(void)
+@@ -9926,72 +10316,7 @@ static void Cmd_handleballthrow(void)
      }
      else
      {
@@ -1129,7 +1138,7 @@ index 3af09ec..4e8373e 100644
  
          if (gLastUsedItem != ITEM_SAFARI_BALL)
          {
-@@ -10020,15 +10343,7 @@ static void Cmd_handleballthrow(void)
+@@ -10020,15 +10345,7 @@ static void Cmd_handleballthrow(void)
          }
          else // mon may be caught, calculate shakes
          {

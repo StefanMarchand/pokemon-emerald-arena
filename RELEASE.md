@@ -1,4 +1,15 @@
-# Emerald Arena 0.12.0
+# Emerald Arena 0.13.0
+
+[Download installer](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.13.0/Emerald-Arena-0.13.0.zip) · [Full BPS patch](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.13.0/Emerald-Arena-0.13.0-full.bps) · [Changes, verification and limits](release-0.13.0.md)
+
+Matheus's feedback update: explicit START menu, more trainer teams staying in
+real time, arena Struggle, landing-aware dodge and nonblocking level-up/capture
+notices. Includes the 25-sprite and persistent-effects follow-up (187 species).
+Back up native saves; do not reuse emulator states. Known limitations remain.
+
+## Previous releases — historical notes
+
+### Emerald Arena 0.12.0
 
 [Download installer](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.12.0/Emerald-Arena-0.12.0.zip) · [Full BPS patch](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.12.0/Emerald-Arena-0.12.0-full.bps) · [Notes, checks and remaining limitations](release-0.12.0.md)
 

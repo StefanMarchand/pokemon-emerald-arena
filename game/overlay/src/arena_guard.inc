@@ -66,7 +66,7 @@ static void GuardDraw(void)
         struct ArenaBody *b=&sArena.bodies[i];
         if(sGuardLife[i])ArenaMoveFx_Guard(i,b->x/Q,b->y/Q-8,
             sGuardAge[i]<16?sGuardAge[i]/4:4+((sGuardAge[i]-16)/5)%4,4);
-        else if(b->shotTimer&&gBattleMons[i].moves[b->shotSlot]==MOVE_HYPER_BEAM&&b->shotElapsed<96)
+        else if(b->shotTimer&&ArenaMoveId(i,b->shotSlot)==MOVE_HYPER_BEAM&&b->shotElapsed<96)
             ArenaMoveFx_Guard(i,b->x/Q,b->y/Q-12,24+min(7,b->shotElapsed/12),4);
     }
     if(sGuardAbsorb.life)

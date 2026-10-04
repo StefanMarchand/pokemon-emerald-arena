@@ -1,8 +1,8 @@
 # Play Emerald Arena
 
-Already use a ROM patcher? [Download the full BPS patch](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.12.0/Emerald-Arena-0.12.0-full.bps) and apply it to your unmodified Emerald (USA/Europe) ROM. It includes the animations and produces the same 0.12.0 game, without extra downloads.
+Already use a ROM patcher? [Download the full BPS patch](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.13.0/Emerald-Arena-0.13.0-full.bps) and apply it to your unmodified Emerald (USA/Europe) ROM. It includes the animations and produces the same 0.13.0 game, without extra downloads.
 
-[Download the ZIP](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.12.0/Emerald-Arena-0.12.0.zip) · [Watch gameplay](https://github.com/GBurgardt/pokemon-emerald-arena#watch-gameplay)
+[Download the ZIP](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.13.0/Emerald-Arena-0.13.0.zip) · [Watch gameplay](https://github.com/GBurgardt/pokemon-emerald-arena#watch-gameplay)
 
 [**How to play · 1 minute video (MP4)**](https://github.com/GBurgardt/pokemon-emerald-arena/releases/download/v0.3.3/emerald-arena-walkthrough.mp4)
 From download to your first fight, saving and continuing. GBA button names are
@@ -13,12 +13,12 @@ shown in the video; your emulator's keyboard bindings may differ.
 You need your own **unmodified Pokémon Emerald (USA/Europe) `.gba`** and Internet
 access. Other languages, other Pokémon games and already-patched ROMs will not work.
 
-1. Download **Emerald-Arena-0.12.0.zip** above. Extract/unzip it first.
+1. Download **Emerald-Arena-0.13.0.zip** above. Extract/unzip it first.
 2. Open **Prepare-Emerald-Arena.html** in a current Chrome, Firefox or Safari.
    It is a local web page, not an app to install. Do not open `install.mjs`.
 3. Click **Choose Emerald ROM** and select your original `.gba` file, not a ZIP.
 4. Wait while it checks the ROM and prepares the animations. Keep the page open.
-5. Click **Download game**. You will get **Emerald-Arena-0.12.0.gba** in your downloads.
+5. Click **Download game**. You will get **Emerald-Arena-0.13.0.gba** in your downloads.
 
 **Updating?** Back up your in-game `.sav` first. Import a copy for the new game,
 or give that copy the same basename as the new ROM if your emulator requires it.
@@ -29,7 +29,7 @@ animation files from pinned public sources. The finished game works offline.
 
 ## 2. Open it in an emulator
 
-Open **Emerald-Arena-0.12.0.gba** using your GBA emulator's **Open / Load game**
+Open **Emerald-Arena-0.13.0.gba** using your GBA emulator's **Open / Load game**
 command. [mGBA](https://mgba.io/downloads.html) is the desktop emulator used for
 testing. If you already have a GBA emulator, you do not need another one.
 
@@ -46,7 +46,7 @@ is not the supported setup path. Physical GBA hardware has not been verified.
 3. You arrive in the field with Charizard and five teammates. Press **L and R
    together** to start a practice encounter.
 4. Move with the direction buttons, **A** to attack, **B + a direction** to dodge.
-   **L / R** changes your selected move. **START** pauses and opens the move picker.
+   **L / R** changes your selected move. **START** opens Pokémon / Bag / Moves / Resume.
 
 These are **GBA button names**, not literal keyboard keys. In your emulator's
 input settings, check which keys correspond to A, B, L, R, START and SELECT.
@@ -67,9 +67,9 @@ Six additional Pokémon are in Box 1 at the PC.
 | L / R | Previous / next move |
 | Hold L + R in battle | Aim a Poké Ball; directions adjust the target |
 | Release L or R while aiming | Throw; B cancels before release |
-| START | Pause / resume; shows all four moves and PP |
-| Up / right / down / left while paused | Choose move 1 / 2 / 3 / 4 |
-| L / R while paused | Switch between MOVES, BAG and POKEMON tabs; A opens the selected menu |
+| START | Open Pokémon / Bag / Moves / Resume; press again to resume |
+| Up / down, then A in the pause menu | Open Pokémon, Bag or Moves; Resume continues |
+| In MOVES: up / right / down / left | Choose move 1 / 2 / 3 / 4; B returns to the pause menu |
 | SELECT | Open party menu |
 | L + R in the field | Next practice opponent |
 
@@ -91,7 +91,7 @@ the fight. A catch goes to your team, or the PC if your team is full.
 
 This version uses regular **Poké Balls** from your bag. Buy them normally;
 the optional fresh practice save starts with 20. Existing saves get no free
-items. Press START and select BAG with L/R to open the native bag.
+items. Press START, choose BAG with up/down and press A to open the native bag.
 No capture XP is added, just like original Emerald.
 There is no nickname prompt in the arena yet; the Name Rater still works.
 
@@ -113,7 +113,7 @@ Include the emulator/version, device, error message and steps. **Do not attach y
 
 ## Current scope
 
-162 animated Pokémon. Wild and single trainer arena encounters;
+187 animated Pokémon. Wild and single trainer arena encounters;
 double and link battles remain classic. Unsupported effects also fall
 back to classic battles. This is not a fully rebalanced adventure.
 
@@ -163,3 +163,27 @@ enemies consider distance, types and remaining PP. Attacks have a recovery time
 shown below the HUD. Water Gun, Bite and Leaf Blade have distinct new effects.
 
 [Release verification](RELEASE.md) · [Source architecture](HOW-IT-WORKS.md)
+
+### Matheus's feedback update (0.13.0)
+
+START provides a visible root menu instead of requiring hidden tabs. Native bag
+and party screens preserve the encounter. Cancel returns to real time.
+
+If no adapted damaging move has PP, a temporary Struggle is available in the
+arena, including Splash-only Magikarp. It does not replace a learned move, spend
+native PP or inflict recoil in this real-time adaptation. Other PP rules remain.
+Bide stores incoming damage for 180 active updates, then attempts a close return
+for twice that amount; pause freezes its charge. Range, walls and dodging matter.
+
+B + direction can cross cover or an enemy when the calculated landing is clear.
+It uses an instantaneous burst across an obstruction, not a walk inside it.
+Blocked destinations retain swept collision; open-space dashes remain continuous.
+
+XP and caught messages appear after returning to the field. Level-up messages
+include the level-up fanfare. You can walk while these notices are visible.
+
+See [verification and remaining limits](release-0.13.0.md). The newly reported
+Matheus save was not available: original Ivan/Billy teams and an older adventure
+save were tested separately. Unsupported formats/abilities still use classic
+fallback; this is not a claim that every encounter is real-time or the full story
+is certified. Wally's tutorial is unchanged.
